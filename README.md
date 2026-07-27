@@ -368,6 +368,6 @@ It helps others discover the project and motivates future development.
 
 ## 👨‍💻 Author
 
-**Your Name**
+Vishwakarma Nitish
 
 Built with ❤️ using AI, FastAPI, React, Three.js, and modern software engineering practices.
