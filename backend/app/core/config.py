@@ -4,6 +4,7 @@ All environment-dependent values live here so the rest of the app
 never touches os.environ directly.
 """
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,11 +25,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://nexus:nexus@localhost:5432/nexus"
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM — Groq (OpenAI-compatible API, free-tier friendly)
-    # Note: Groq's model lineup changes often — verify against
-    # https://console.groq.com/docs/models before deploying. As of
-    # mid-2026, llama-3.3-70b-versatile is deprecated; gpt-oss-120b is
-    # the recommended general-purpose replacement.
+    # LLM — Groq
     groq_api_key: str = ""
     agent_model: str = "openai/gpt-oss-120b"
     max_tokens_per_agent_call: int = 4096
@@ -44,6 +41,20 @@ class Settings(BaseSettings):
 
     # CORS
     allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("["):
+                # looks like JSON already, let it fail naturally if malformed
+                import json
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
 
 @lru_cache
