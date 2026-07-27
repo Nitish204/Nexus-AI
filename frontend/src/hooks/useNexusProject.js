@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const ws = new WebSocket(`wss://nexus-ai-wqx2.onrender.com/ws/projects/${projectId}`);
+// Point this at your deployed backend. Using env var so it can differ
+// between local dev and production (Netlify) builds.
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 /**
  * Connects the 3D workspace to the Python backend: opens the WebSocket
@@ -17,12 +20,10 @@ export function useNexusProject(projectId) {
 
   useEffect(() => {
     if (!projectId) return;
-    const ws = new WebSocket(`ws://localhost:8000/ws/projects/${projectId}`);
+    const ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}`);
     wsRef.current = ws;
-
     ws.onmessage = (event) => {
       const { type, payload } = JSON.parse(event.data);
-
       if (type === "agent_message" || type === "agent_stream") {
         setAgentActivity((prev) => [...prev.slice(-199), { type, ...payload, t: Date.now() }]);
       }
@@ -36,7 +37,6 @@ export function useNexusProject(projectId) {
         setSandboxResults((prev) => [...prev.slice(-49), payload]);
       }
     };
-
     return () => ws.close();
   }, [projectId]);
 
