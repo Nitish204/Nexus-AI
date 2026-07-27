@@ -1,7 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 sqlmodel==0.0.22
-asyncpg==0.29.0
+asyncpg==0.31.0
 alembic==1.13.2
 openai==1.51.0
 pydantic-settings==2.5.2
