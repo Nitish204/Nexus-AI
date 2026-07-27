@@ -3,6 +3,7 @@ NEXUS — Central configuration.
 All environment-dependent values live here so the rest of the app
 never touches os.environ directly.
 """
+import json
 from functools import lru_cache
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://nexus:nexus@localhost:5432/nexus"
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM — Groq
+    # LLM — Groq (OpenAI-compatible API, free-tier friendly)
     groq_api_key: str = ""
     agent_model: str = "openai/gpt-oss-120b"
     max_tokens_per_agent_call: int = 4096
@@ -45,14 +46,27 @@ class Settings(BaseSettings):
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):
+        """
+        Accepts either:
+          - a JSON array string:  ["https://a.com","https://b.com"]
+          - a comma-separated string: https://a.com,https://b.com
+          - an already-parsed list (no-op)
+          - empty/missing -> falls back to default via pydantic (won't reach here if unset)
+        """
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
         if isinstance(v, str):
             v = v.strip()
             if not v:
                 return []
             if v.startswith("["):
-                # looks like JSON already, let it fail naturally if malformed
-                import json
-                return json.loads(v)
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    # malformed JSON-looking string — fall back to comma split
+                    pass
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 
