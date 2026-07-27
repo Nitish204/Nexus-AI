@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const API_BASE = "http://localhost:8000";
+const ws = new WebSocket(`wss://nexus-ai-wqx2.onrender.com/ws/projects/${projectId}`);
 
 /**
  * Connects the 3D workspace to the Python backend: opens the WebSocket
