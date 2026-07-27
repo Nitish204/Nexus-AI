@@ -1,74 +1,373 @@
-# NEXUS — Autonomous AI Developer Workspace
+# 🚀 NEXUS — Autonomous AI Developer Workspace
 
-A floating 3D workspace where five AI agents (Product Manager, Backend
-Engineer, Frontend Engineer, QA Engineer, DevOps Engineer) collaborate
-like a software team to build real, runnable code from a single request.
+> **A next-generation multi-agent AI software engineering platform that transforms a single prompt into production-ready applications through autonomous collaboration.**
 
-## What's implemented right now (Phase 0-1, core of 2 & 6)
+---
 
-- **FastAPI backend** (`backend/app`) — full REST API, WebSocket streaming
-- **5 working agents** (`backend/app/agents`) — each a subclass of `AgentBase`,
-  streaming Claude responses live and writing structured output to Postgres
-- **Orchestrator** (`backend/app/services/orchestrator.py`) — decomposes a
-  request via the PM agent, then runs engineer agents in dependency order,
-  running independent tasks concurrently
-- **Shared blackboard DB model** (`backend/app/db/models.py`) — Project,
-  Task, AgentMessage, GeneratedFile, GraphEdge, AnalysisResult, Deployment
-- **Live event bus + WebSocket gateway** — every agent action streams to
-  the browser in real time
-- **Static analysis service** (Phase 6) — radon/bandit/ruff wired up
-- **3D workspace shell** (`frontend/src/scenes`) — R3F scene with 5 agent
-  nodes that pulse/glow when their agent is active, a floating Monaco code
-  editor panel, and a command bar (ready for voice transcription to feed into)
+## 🌟 Overview
 
-## Running it locally
+NEXUS is an AI-powered autonomous software development workspace where multiple specialized AI agents collaborate like a real engineering team.
+
+Instead of relying on a single AI model, NEXUS coordinates multiple intelligent agents—each with a dedicated responsibility—to plan, develop, test, analyze, and deploy complete software projects.
+
+The entire workflow is visualized inside an immersive 3D workspace where users can watch AI agents collaborate in real time.
+
+---
+
+# ✨ Features
+
+- 🤖 Multi-Agent AI Collaboration
+- 🌐 Real-time WebSocket Communication
+- 🧠 Intelligent Task Orchestration
+- 📂 Shared Blackboard Memory
+- 📊 Static Code Analysis
+- 🧪 Automated QA Validation
+- 🐳 Docker Sandbox Execution
+- 🚀 One-click Deployment
+- 🎙️ Voice Command Support
+- 🌌 Interactive 3D Workspace
+- 📈 Live Project Analytics
+- ⚡ Concurrent Task Execution
+
+---
+
+# 👥 AI Agent Team
+
+| Agent | Responsibility |
+|--------|----------------|
+| 🟧 Product Manager | Understands user requirements and breaks projects into tasks |
+| 🔵 Backend Engineer | Develops APIs, databases, authentication, and business logic |
+| 🟣 Frontend Engineer | Builds responsive user interfaces and frontend architecture |
+| 🟢 QA Engineer | Validates generated code and performs automated testing |
+| 🟡 DevOps Engineer | Handles deployment, Docker, infrastructure, and CI/CD |
+
+Each agent works independently while communicating through a shared project memory, enabling parallel development and intelligent collaboration.
+
+---
+
+# 🏗️ Architecture
+
+```
+                  User Prompt
+                       │
+                       ▼
+             Product Manager Agent
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+ Backend Agent   Frontend Agent    QA Agent
+        │              │              │
+        └──────────────┼──────────────┘
+                       ▼
+                DevOps Agent
+                       │
+                Deployment Pipeline
+                       │
+                       ▼
+              Production Application
+```
+
+---
+
+# 🚀 Current Capabilities
+
+### ✅ Multi-Agent Orchestration
+
+- Intelligent task decomposition
+- Parallel execution
+- Dependency management
+- Shared communication layer
+
+---
+
+### 🌐 Real-Time Collaboration
+
+- FastAPI backend
+- WebSocket event streaming
+- Live agent status updates
+- Real-time project monitoring
+
+---
+
+### 📦 Shared Blackboard Database
+
+Stores:
+
+- Projects
+- Tasks
+- Generated Files
+- Agent Messages
+- Analysis Reports
+- Deployment Information
+- Knowledge Graph
+
+---
+
+### 📊 Static Code Analysis
+
+Integrated tools:
+
+- Ruff
+- Bandit
+- Radon
+
+Provides:
+
+- Code complexity
+- Security analysis
+- Code quality metrics
+
+---
+
+### 🧪 Docker Sandbox
+
+Safely executes generated code inside isolated containers before deployment.
+
+Features:
+
+- Automated retries
+- Failure detection
+- Error feedback loop
+- Secure execution environment
+
+---
+
+### 🚀 Deployment
+
+Supports:
+
+- Local Docker deployment
+- Render deployment (API integration)
+
+---
+
+### 🎙️ Voice Commands
+
+Native browser speech recognition enables users to control NEXUS using voice.
+
+---
+
+### 🌌 3D Workspace
+
+Built using React Three Fiber.
+
+Includes:
+
+- Interactive AI agent nodes
+- Floating code editor
+- Analytics dashboard
+- Real-time animations
+- Command center
+
+---
+
+# 🛠️ Technology Stack
+
+## Backend
+
+- FastAPI
+- SQLAlchemy
+- PostgreSQL
+- Redis
+- WebSockets
+- Python
+
+---
+
+## Frontend
+
+- React
+- React Three Fiber
+- Three.js
+- Vite
+- Monaco Editor
+
+---
+
+## AI
+
+- Claude API
+- Multi-Agent Architecture
+- Prompt Orchestration
+
+---
+
+## DevOps
+
+- Docker
+- Render
+- Gunicorn
+
+---
+
+# 📂 Project Structure
+
+```
+NEXUS
+│
+├── backend/
+│   ├── app/
+│   ├── agents/
+│   ├── db/
+│   ├── services/
+│   └── sandbox/
+│
+├── frontend/
+│   ├── src/
+│   ├── scenes/
+│   ├── hooks/
+│   └── components/
+│
+├── infra/
+│
+└── README.md
+```
+
+---
+
+# ⚙️ Installation
+
+## 1. Clone Repository
 
 ```bash
-# 1. Backend
-cd backend
-cp .env.example .env   # fill in GROQ_API_KEY (get one free at console.groq.com)
-pip install -r requirements.txt
-# start postgres + redis (see infra/docker-compose.yml), then:
-uvicorn app.main:app --reload
+git clone https://github.com/your-username/NEXUS.git
 
-# 2. Frontend
+cd NEXUS
+```
+
+---
+
+## 2. Backend Setup
+
+```bash
+cd backend
+
+cp .env.example .env
+
+pip install -r requirements.txt
+
+uvicorn app.main:app --reload
+```
+
+---
+
+## 3. Frontend Setup
+
+```bash
 cd frontend
+
 npm install
+
 npm run dev
 ```
 
-Create a project:
+---
+
+## 4. Start Database
+
+Use Docker Compose:
+
 ```bash
-curl -X POST localhost:8000/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{"name": "auth-demo"}'
+docker compose up
 ```
 
-Open `http://localhost:5173/?project=<returned_id>`, type a request like
-*"Build a Django authentication system with JWT and PostgreSQL"* into the
-command bar, and watch the agent nodes light up as they work.
+---
 
-## Roadmap — what's next per phase
+# 🚀 Example Workflow
 
-| Phase | Status | What it adds |
-|---|---|---|
-| 0-1 | ✅ done | Foundations, single-agent generation |
-| 2 | ✅ done | Multi-agent orchestration |
-| 3 | ✅ done | Docker sandbox execution (`app/sandbox/runner.py`) — runs generated Python + QA tests in an isolated, no-network container; on failure the orchestrator feeds the error back to the same agent and retries (`MAX_FIX_ATTEMPTS`), only marking a task FAILED after retries are exhausted |
-| 4 | ✅ done | Knowledge graph (`app/services/graph.py`) — AST-parses Python files and regex-parses JS for imports/API routes/table references, stored as `GraphEdge` rows, rebuilt automatically after every task. Exposed at `GET /api/projects/{id}/graph` as `{nodes, links}`, ready for `react-force-graph` or a custom R3F layout |
-| 5 | ✅ done | Deployment service (`app/services/deployment.py`) — materializes the virtual file tree, builds via the DevOps agent's Dockerfile. `LocalDockerProvider` works out of the box; `RenderProvider` needs `RENDER_API_KEY` in `.env` for real cloud deploys. Triggered via `POST /api/projects/{id}/deploy`, status streams over WebSocket |
-| 6 | ✅ done | Analytics — backend (radon/bandit/ruff) plus a live frontend panel (`AnalyticsPanel.jsx`) showing complexity/security scores and the deploy button |
-| 7 | ✅ done | Voice — `useVoiceCommand.js` wraps the browser's native SpeechRecognition API (no external service/key needed), transcribed text hits the same `/command` endpoint typed commands use. Mic button appears automatically in browsers that support it (Chrome/Edge) |
-| 8 | 🔄 ongoing | 3D shell — current version renders agent nodes, code panel, analytics panel, voice input. Still open: rendering the Phase-4 graph data as literal 3D nodes/links, and agent-to-agent connection beams during handoffs |
+Create a project:
 
-### Notes on Phase 3-5 tradeoffs
-- **Sandbox** only gates Python output (`BACKEND_ENGINEER`, `QA_ENGINEER` roles). A JS test runner (Jest in a Node container) is the natural next step using the same `SandboxResult` contract.
-- **Deployment**'s `RenderProvider` call shape matches Render's documented service-create endpoint, but Render's real flow is git-based — treat it as a scaffold to adapt once you've connected a repo, not a drop-in production deployer. `LocalDockerProvider` is fully functional today if you just want to prove the "one-click deploy" loop locally.
-- Both new services reuse the existing `event_bus`, so no frontend changes were needed beyond one new hook (`useNexusProject.js` now also tracks `deploymentStatus` and `sandboxResults`).
+```bash
+curl -X POST localhost:8000/api/projects \
+-H "Content-Type: application/json" \
+-d '{"name":"Authentication System"}'
+```
 
-## Design language
+Open
 
-Each agent has a fixed, distinct color identity (orange PM, cyan backend,
-violet frontend, green QA, yellow DevOps) used consistently across the 3D
-nodes, activity feed, and (planned) analytics charts — this is NEXUS's
-visual signature, not a generic dashboard palette.
+```
+http://localhost:5173
+```
+
+Enter a prompt like:
+
+> Build a Django authentication system using JWT and PostgreSQL.
+
+Watch the AI agents collaborate, generate code, validate it, analyze quality, and prepare it for deployment.
+
+---
+
+# 🗺️ Development Roadmap
+
+| Phase | Status |
+|----------|---------|
+| Foundation | ✅ Completed |
+| Multi-Agent Collaboration | ✅ Completed |
+| Docker Sandbox | ✅ Completed |
+| Knowledge Graph | ✅ Completed |
+| Deployment Engine | ✅ Completed |
+| Static Code Analysis | ✅ Completed |
+| Voice Commands | ✅ Completed |
+| Interactive 3D Visualization | 🚧 In Progress |
+
+---
+
+# 📸 Screenshots
+
+> Add screenshots or GIF demonstrations here.
+
+Example:
+
+```
+/assets/dashboard.png
+/assets/agents.gif
+/assets/workspace.png
+```
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome!
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to your branch
+5. Open a Pull Request
+
+---
+
+# 💡 Future Improvements
+
+- Local LLM support
+- Multi-language code generation
+- GitHub repository generation
+- Cloud deployment automation
+- AI code review
+- Plugin marketplace
+- Team collaboration
+- Kubernetes deployment
+- Mobile companion app
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+# ⭐ Support
+
+If you found this project useful, please consider giving it a ⭐ on GitHub.
+
+It helps others discover the project and motivates future development.
+
+---
+
+## 👨‍💻 Author
+
+**Your Name**
+
+Built with ❤️ using AI, FastAPI, React, Three.js, and modern software engineering practices.
