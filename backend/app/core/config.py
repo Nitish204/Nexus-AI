@@ -3,9 +3,7 @@ NEXUS — Central configuration.
 All environment-dependent values live here so the rest of the app
 never touches os.environ directly.
 """
-import json
 from functools import lru_cache
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,35 +38,26 @@ class Settings(BaseSettings):
     deploy_provider: str = "local"  # local | render | fly | aws
     render_api_key: str = ""
 
-    # CORS
-    allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    # CORS — kept as a plain string on purpose.
+    # pydantic-settings tries to JSON-decode any list/dict-typed field
+    # straight from the raw env var, BEFORE any validator runs, which
+    # crashes on plain comma-separated strings. Keeping this as `str`
+    # sidesteps that entirely; use `allowed_origins_list` below instead
+    # of this field directly.
+    allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
-    @field_validator("allowed_origins", mode="before")
-    @classmethod
-    def parse_allowed_origins(cls, v):
-        """
-        Accepts either:
-          - a JSON array string:  ["https://a.com","https://b.com"]
-          - a comma-separated string: https://a.com,https://b.com
-          - an already-parsed list (no-op)
-          - empty/missing -> falls back to default via pydantic (won't reach here if unset)
-        """
-        if v is None:
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        raw = self.allowed_origins.strip()
+        if not raw:
             return []
-        if isinstance(v, list):
-            return v
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                return []
-            if v.startswith("["):
-                try:
-                    return json.loads(v)
-                except json.JSONDecodeError:
-                    # malformed JSON-looking string — fall back to comma split
-                    pass
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+        if raw.startswith("["):
+            import json
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 @lru_cache
