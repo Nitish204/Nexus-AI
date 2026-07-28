@@ -1,19 +1,51 @@
+import { useEffect, useState } from "react";
 import Workspace from "./scenes/Workspace";
 
-// Swap for a real project picker later — hardcoded here so the loop
-// (create project via API -> paste ID -> watch it build) is testable
-// on day one.
-const DEMO_PROJECT_ID = new URLSearchParams(window.location.search).get("project") ?? "";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 export default function App() {
-  if (!DEMO_PROJECT_ID) {
+  const [projectId, setProjectId] = useState(
+    new URLSearchParams(window.location.search).get("project") ?? ""
+  );
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (projectId || creating) return;
+    setCreating(true);
+    fetch(`${API_BASE}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Project" }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set("project", data.id);
+        window.history.replaceState({}, "", url);
+        setProjectId(data.id);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setCreating(false));
+  }, [projectId, creating]);
+
+  if (error) {
     return (
-      <div style={{ color: "#e6faff", fontFamily: "monospace", padding: 40, background: "#05060a", height: "100vh" }}>
-        <h2>NEXUS</h2>
-        <p>Create a project via <code>POST /api/projects</code>, then open:</p>
-        <code>?project=&lt;project_id&gt;</code>
+      <div style={{ color: "#ff6b35", fontFamily: "monospace", padding: 40, background: "#05060a", height: "100vh" }}>
+        <h2>NEXUS — Couldn't start a project</h2>
+        <p>{error}</p>
       </div>
     );
   }
-  return <Workspace projectId={DEMO_PROJECT_ID} />;
+
+  if (!projectId) {
+    return (
+      <div style={{ color: "#e6faff", fontFamily: "monospace", padding: 40, background: "#05060a", height: "100vh" }}>
+        <h2>NEXUS</h2>
+        <p>Setting up your workspace...</p>
+      </div>
+    );
+  }
+
+  return <Workspace projectId={projectId} />;
 }
