@@ -1,9 +1,9 @@
 import asyncio
 from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
-from sqlmodel import select
+from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.db.models import GeneratedFile, Project, Task
+from app.db.models import GeneratedFile, Project, Task, Deployment
 from app.db.session import get_session, get_session_context
 from app.services.orchestrator import Orchestrator
 
@@ -46,6 +46,20 @@ async def list_files(project_id: str, session: AsyncSession = Depends(get_sessio
 async def list_tasks(project_id: str, session: AsyncSession = Depends(get_session)):
     result = await session.exec(select(Task).where(Task.project_id == project_id))
     return result.all()
+
+
+@router.get("/{project_id}/deployment")
+async def get_latest_deployment(project_id: str, session: AsyncSession = Depends(get_session)):
+    """Returns the most recent deployment attempt for this project, so
+    the frontend can poll for the result even if it missed the live
+    WebSocket event (e.g. reconnected right after deploy finished)."""
+    result = await session.exec(
+        select(Deployment)
+        .where(Deployment.project_id == project_id)
+        .order_by(desc(Deployment.created_at))
+        .limit(1)
+    )
+    return result.first()
 
 
 async def _run_orchestrator_in_background(project_id: str, text: str):
