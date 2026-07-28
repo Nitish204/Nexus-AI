@@ -37,8 +37,6 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
     setDeploying(true);
     try {
       await fetch(`${API_BASE}/api/projects/${projectId}/deploy`, { method: "POST" });
-      // Poll a few times since deployment may take a moment to finish
-      // and we might miss the live WebSocket event.
       for (const delay of [2000, 4000, 7000, 12000]) {
         await new Promise((r) => setTimeout(r, delay));
         await pollDeployment();
