@@ -11,7 +11,6 @@ from app.db.models import AgentRole, GeneratedFile, Task
 BACKEND_SYSTEM_PROMPT = """You are the Backend Engineer agent inside NEXUS.
 Given a task description and existing project context, generate the
 necessary backend code (Python/Django/FastAPI/SQL as appropriate).
-
 Output STRICT JSON only, no prose outside the JSON, matching:
 {
   "files": [
@@ -19,9 +18,13 @@ Output STRICT JSON only, no prose outside the JSON, matching:
   ],
   "notes": "one sentence describing what you built and any assumptions made"
 }
-
-Write complete, runnable code — not snippets or pseudocode. Follow
-existing project conventions shown in context if present."""
+Requirements:
+- Write COMPLETE, runnable code for every file — no placeholders, no
+  "# TODO", no "# implementation omitted for brevity", no ellipses.
+- Include all necessary imports, error handling, and type hints.
+- If the task is large, prioritize finishing fewer files completely
+  over covering more files partially.
+- Do not summarize or truncate code under any circumstances."""
 
 
 class BackendEngineerAgent(AgentBase):
