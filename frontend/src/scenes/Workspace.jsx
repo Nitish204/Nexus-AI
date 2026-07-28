@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stars, Html } from "@react-three/drei";
 import Editor from "@monaco-editor/react";
@@ -6,6 +7,50 @@ import { useNexusProject } from "../hooks/useNexusProject";
 import { useVoiceCommand } from "../hooks/useVoiceCommand";
 import AnalyticsPanel from "../components/AnalyticsPanel";
 import { useState } from "react";
+
+useEffect(() => {
+  const lines = [
+    "Welcome back.",
+    "Nexus is online.",
+    "Your intelligent engineering workspace has been fully initialized.",
+    "Project management, architecture, frontend, backend, quality assurance, and DevOps specialists are standing by.",
+    "Share your vision.",
+    "And let's build something extraordinary."
+  ];
+
+  let index = 0;
+
+  const speakNext = () => {
+    if (index >= lines.length) return;
+
+    const utterance = new SpeechSynthesisUtterance(lines[index]);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    utterance.onend = () => {
+      index++;
+      setTimeout(speakNext, 500); // 0.5-second pause
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  speakNext();
+
+  return () => {
+    window.speechSynthesis.cancel();
+  };
+}, []);
+
+  // Some browsers load voices asynchronously — wait if needed
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = greet;
+  } else {
+    greet();
+  }
+
+  return () => window.speechSynthesis.cancel();
+}, []);
 
 const AGENT_LAYOUT = [
   { role: "product_manager", position: [0, 2.2, -2] },
