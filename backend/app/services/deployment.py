@@ -105,6 +105,11 @@ class LocalDockerProvider(DeployProvider):
     run it. Useful for the demo path and for anyone without cloud
     credentials configured yet."""
 
+    def __init__(self, api_key: str = ""):
+        # Not used locally, but accepted so both providers share the
+        # same constructor signature and can be called uniformly.
+        self.api_key = api_key
+
     async def deploy(self, project_root: Path, deployment: Deployment) -> Deployment:
         import docker as docker_sdk
 
@@ -120,7 +125,6 @@ class LocalDockerProvider(DeployProvider):
             deployment.status = "failed"
             deployment.log = f"Local build error: {exc}"
         return deployment
-
 
 PROVIDERS: dict[str, type[DeployProvider]] = {
     "render": RenderProvider,
