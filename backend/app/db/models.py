@@ -15,7 +15,7 @@ from sqlalchemy import Column, JSON
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.utcnow()
 
 
 def new_id() -> str:
