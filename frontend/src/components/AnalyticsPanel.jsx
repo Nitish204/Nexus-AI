@@ -10,6 +10,8 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 export default function AnalyticsPanel({ projectId, deploymentStatus }) {
   const [analysis, setAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [latestDeployment, setLatestDeployment] = useState(null);
 
   const runAnalysis = useCallback(async () => {
     setLoading(true);
@@ -21,14 +23,37 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
     }
   }, [projectId]);
 
-  const deploy = useCallback(() => {
-    fetch(`${API_BASE}/api/projects/${projectId}/deploy`, { method: "POST" });
+  const pollDeployment = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/projects/${projectId}/deployment`);
+      const data = await res.json();
+      if (data) setLatestDeployment(data);
+    } catch {
+      // ignore transient errors while polling
+    }
   }, [projectId]);
+
+  const deploy = useCallback(async () => {
+    setDeploying(true);
+    try {
+      await fetch(`${API_BASE}/api/projects/${projectId}/deploy`, { method: "POST" });
+      // Poll a few times since deployment may take a moment to finish
+      // and we might miss the live WebSocket event.
+      for (const delay of [2000, 4000, 7000, 12000]) {
+        await new Promise((r) => setTimeout(r, delay));
+        await pollDeployment();
+      }
+    } finally {
+      setDeploying(false);
+    }
+  }, [projectId, pollDeployment]);
 
   const totalSecurityIssues = analysis.reduce((sum, a) => sum + a.security_issues, 0);
   const avgComplexity = analysis.length
     ? (analysis.reduce((sum, a) => sum + a.complexity_score, 0) / analysis.length).toFixed(1)
     : "—";
+
+  const shownDeployment = deploymentStatus || latestDeployment;
 
   return (
     <div
@@ -64,14 +89,18 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
         <strong style={{ color: "#ffd23f" }}>Deploy</strong>
         <button
           onClick={deploy}
+          disabled={deploying}
           style={{ background: "#ffd23f", border: "none", color: "#05060a", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 700 }}
         >
-          🚀 Deploy
+          {deploying ? "Deploying..." : "🚀 Deploy"}
         </button>
       </div>
-      {deploymentStatus && (
-        <div style={{ marginTop: 6, color: deploymentStatus.status === "live" ? "#39ff88" : "#ffd23f" }}>
-          {deploymentStatus.status} {deploymentStatus.url ? `→ ${deploymentStatus.url}` : ""}
+      {shownDeployment && (
+        <div style={{ marginTop: 6, color: shownDeployment.status === "live" ? "#39ff88" : shownDeployment.status === "failed" ? "#ff6b35" : "#ffd23f" }}>
+          {shownDeployment.status} {shownDeployment.url ? `→ ${shownDeployment.url}` : ""}
+          {shownDeployment.log && (
+            <div style={{ color: "#888", marginTop: 4, fontSize: 11 }}>{shownDeployment.log}</div>
+          )}
         </div>
       )}
     </div>
