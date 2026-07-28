@@ -1,12 +1,10 @@
 import asyncio
-
 from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-
 from app.db.models import GeneratedFile, Project, Task
-from app.db.session import get_session
+from app.db.session import get_session, get_session_context
 from app.services.orchestrator import Orchestrator
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -50,15 +48,22 @@ async def list_tasks(project_id: str, session: AsyncSession = Depends(get_sessio
     return result.all()
 
 
+async def _run_orchestrator_in_background(project_id: str, text: str):
+    """Runs with its OWN fresh database session/connection, independent
+    of the HTTP request's session (which is closed by the time this
+    background task actually executes)."""
+    async with get_session_context() as session:
+        orchestrator = Orchestrator(session)
+        await orchestrator.kick_off(project_id, text)
+
+
 @router.post("/{project_id}/command")
 async def submit_command(
     project_id: str,
     body: CommandRequest,
     background_tasks: BackgroundTasks,
-    session: AsyncSession = Depends(get_session),
 ):
     """Fires the orchestrator in the background so the HTTP call returns
     immediately; all progress streams over the WebSocket instead."""
-    orchestrator = Orchestrator(session)
-    background_tasks.add_task(orchestrator.kick_off, project_id, body.text)
+    background_tasks.add_task(_run_orchestrator_in_background, project_id, body.text)
     return {"status": "accepted", "project_id": project_id}
