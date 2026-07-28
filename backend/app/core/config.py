@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # LLM — Groq (OpenAI-compatible API, free-tier friendly)
     groq_api_key: str = ""
     agent_model: str = "openai/gpt-oss-120b"
-    max_tokens_per_agent_call: int = 4096
+    max_tokens_per_agent_call: int = 8192
 
     # Sandbox
     docker_image_python: str = "python:3.12-slim"
