@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 /**
  * Floating side panel: quality/security scores (Phase 6) and a
@@ -33,10 +33,7 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
   return (
     <div
       style={{
-        position: "absolute",
-        top: 24,
-        left: 24,
-        width: 260,
+        width: "min(260px, 88vw)",
         padding: 16,
         borderRadius: 12,
         background: "#0a0d14cc",
@@ -57,15 +54,12 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
           {loading ? "Scanning..." : "Scan"}
         </button>
       </div>
-
       <div>Files scanned: {analysis.length}</div>
       <div>Avg complexity: {avgComplexity}</div>
       <div style={{ color: totalSecurityIssues > 0 ? "#ff6b35" : "#39ff88" }}>
         Security issues: {totalSecurityIssues}
       </div>
-
       <hr style={{ border: "none", borderTop: "1px solid #ffffff22", margin: "12px 0" }} />
-
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <strong style={{ color: "#ffd23f" }}>Deploy</strong>
         <button
