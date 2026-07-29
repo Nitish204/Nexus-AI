@@ -2,11 +2,11 @@ import { useState, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
-/**
- * Floating side panel: quality/security scores (Phase 6) and a
- * one-click deploy button (Phase 5). Kept as a separate small panel
- * rather than crowding the code editor overlay.
- */
+function authHeaders() {
+  const token = localStorage.getItem("nexus_token");
+  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+}
+
 export default function AnalyticsPanel({ projectId, deploymentStatus }) {
   const [analysis, setAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,10 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
   const runAnalysis = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${projectId}/analytics/run`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/projects/${projectId}/analytics/run`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
       setAnalysis(await res.json());
     } finally {
       setLoading(false);
@@ -25,7 +28,9 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
 
   const pollDeployment = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${projectId}/deployment`);
+      const res = await fetch(`${API_BASE}/api/projects/${projectId}/deployment`, {
+        headers: authHeaders(),
+      });
       const data = await res.json();
       if (data) setLatestDeployment(data);
     } catch {
@@ -36,7 +41,10 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
   const deploy = useCallback(async () => {
     setDeploying(true);
     try {
-      await fetch(`${API_BASE}/api/projects/${projectId}/deploy`, { method: "POST" });
+      await fetch(`${API_BASE}/api/projects/${projectId}/deploy`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
       for (const delay of [2000, 4000, 7000, 12000]) {
         await new Promise((r) => setTimeout(r, delay));
         await pollDeployment();
