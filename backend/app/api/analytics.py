@@ -1,19 +1,23 @@
 from fastapi import APIRouter, Depends
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-
 from app.db.models import AnalysisResult, GeneratedFile
 from app.db.session import get_session
 from app.services.analysis import analyze_file
+from app.api.projects import get_current_user_id, get_owned_project
 
 router = APIRouter(prefix="/api/projects/{project_id}/analytics", tags=["analytics"])
 
 
 @router.post("/run")
-async def run_analysis(project_id: str, session: AsyncSession = Depends(get_session)):
+async def run_analysis(
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
+):
+    await get_owned_project(project_id, session, user_id)
     result = await session.exec(select(GeneratedFile).where(GeneratedFile.project_id == project_id))
     files = result.all()
-
     reports = []
     for f in files:
         report = await analyze_file(f)
@@ -24,6 +28,11 @@ async def run_analysis(project_id: str, session: AsyncSession = Depends(get_sess
 
 
 @router.get("")
-async def get_analysis(project_id: str, session: AsyncSession = Depends(get_session)):
+async def get_analysis(
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
+):
+    await get_owned_project(project_id, session, user_id)
     result = await session.exec(select(AnalysisResult).where(AnalysisResult.project_id == project_id))
     return result.all()
