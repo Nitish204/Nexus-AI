@@ -20,7 +20,8 @@ export function useNexusProject(projectId) {
 
   useEffect(() => {
     if (!projectId) return;
-    const ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}`);
+    const token = localStorage.getItem("nexus_token");
+    const ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}?token=${encodeURIComponent(token || "")}`);
     wsRef.current = ws;
     ws.onmessage = (event) => {
       const { type, payload } = JSON.parse(event.data);
@@ -40,11 +41,16 @@ export function useNexusProject(projectId) {
     return () => ws.close();
   }, [projectId]);
 
+  const authHeaders = () => {
+    const token = localStorage.getItem("nexus_token");
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  };
+
   const sendCommand = useCallback(
     async (text) => {
       await fetch(`${API_BASE}/api/projects/${projectId}/command`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ text }),
       });
     },
@@ -52,7 +58,9 @@ export function useNexusProject(projectId) {
   );
 
   const refreshFiles = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/files`);
+    const res = await fetch(`${API_BASE}/api/projects/${projectId}/files`, {
+      headers: authHeaders(),
+    });
     const data = await res.json();
     const byPath = Object.fromEntries(data.map((f) => [f.path, f]));
     setFiles(byPath);
