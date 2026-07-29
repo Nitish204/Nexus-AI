@@ -75,66 +75,64 @@ export default function Workspace({ projectId }) {
   }
 
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", background: "#05060a", overflow: "hidden" }}>
-      <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
-        <ambientLight intensity={0.4} />
-        <pointLight position={[5, 5, 5]} intensity={1.2} color="#00d9ff" />
-        <pointLight position={[-5, -5, 5]} intensity={0.8} color="#ff6b35" />
-        <Stars radius={60} depth={40} count={2000} factor={3} fade />
+    <div
+      style={{
+        position: "relative",
+        width: "100vw",
+        height: "100dvh",
+        background: "#05060a",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* 3D scene + floating panels — fills all space above the command bar */}
+      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+        <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
+          <ambientLight intensity={0.4} />
+          <pointLight position={[5, 5, 5]} intensity={1.2} color="#00d9ff" />
+          <pointLight position={[-5, -5, 5]} intensity={0.8} color="#ff6b35" />
+          <Stars radius={60} depth={40} count={2000} factor={3} fade />
 
-        {AGENT_LAYOUT.map((a) => (
-          <AgentNode key={a.role} role={a.role} position={a.position} active={activeRoles.has(a.role)} />
-        ))}
+          {AGENT_LAYOUT.map((a) => (
+            <AgentNode key={a.role} role={a.role} position={a.position} active={activeRoles.has(a.role)} />
+          ))}
 
-        <OrbitControls enablePan={false} minDistance={4} maxDistance={14} />
-      </Canvas>
+          <OrbitControls enablePan={false} minDistance={4} maxDistance={14} />
+        </Canvas>
 
-      {/* Top bar: Analytics / Scan / Deploy panel */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          gap: 8,
-          padding: "12px 16px",
-          pointerEvents: "none",
-        }}
-      >
-        <div style={{ pointerEvents: "auto" }}>
+        {/* Analytics panel — floats top-left over the canvas only */}
+        <div style={{ position: "absolute", top: 12, left: 12, zIndex: 2, maxWidth: "calc(100vw - 24px)" }}>
           <AnalyticsPanel projectId={projectId} deploymentStatus={deploymentStatus} />
+        </div>
+
+        {/* Code editor — floats top-right over the canvas only, shrinks on mobile */}
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            zIndex: 2,
+            width: "min(380px, 44vw)",
+            height: "min(260px, 32vh)",
+            minWidth: 160,
+            borderRadius: 12,
+            overflow: "hidden",
+            border: "1px solid #00d9ff44",
+            boxShadow: "0 0 40px #00d9ff22",
+          }}
+        >
+          <Editor
+            height="100%"
+            theme="vs-dark"
+            defaultLanguage="python"
+            value={latestCodeStream?.content ?? activeCode}
+            options={{ readOnly: true, fontSize: 11, minimap: { enabled: false } }}
+          />
         </div>
       </div>
 
-      {/* Floating code editor panel — overlaid via CSS, not R3F Html, for
-          crisp text rendering (Monaco doesn't render well through WebGL) */}
-      <div
-        style={{
-          position: "absolute",
-          top: "clamp(60px, 10vh, 90px)",
-          right: 16,
-          width: "min(420px, 92vw)",
-          height: "min(320px, 40vh)",
-          borderRadius: 12,
-          overflow: "hidden",
-          border: "1px solid #00d9ff44",
-          boxShadow: "0 0 40px #00d9ff22",
-        }}
-      >
-        <Editor
-          height="100%"
-          theme="vs-dark"
-          defaultLanguage="python"
-          value={latestCodeStream?.content ?? activeCode}
-          options={{ readOnly: true, fontSize: 12, minimap: { enabled: false } }}
-        />
-      </div>
-
-      {/* Command input — this is where typed OR voice-transcribed text lands */}
+      {/* Command bar — its own fixed row below the canvas, never overlaps, always visible */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -143,23 +141,23 @@ export default function Workspace({ projectId }) {
           setCommand("");
         }}
         style={{
-          position: "absolute",
-          bottom: "max(16px, env(safe-area-inset-bottom))",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "min(600px, 92vw)",
+          flexShrink: 0,
           display: "flex",
           gap: 8,
+          padding: "10px 12px",
+          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
+          background: "#0a0d14ee",
+          borderTop: "1px solid #00d9ff33",
         }}
       >
         <input
           value={command}
           onChange={(e) => setCommand(e.target.value)}
-          placeholder='e.g. "Build a Django auth system with JWT"'
+          placeholder='e.g. "Build a Django auth system"'
           style={{
             flex: 1,
             minWidth: 0,
-            padding: "12px 16px",
+            padding: "12px 14px",
             borderRadius: 8,
             border: "1px solid #00d9ff66",
             background: "#0a0d14cc",
@@ -175,7 +173,7 @@ export default function Workspace({ projectId }) {
             title="Voice command"
             style={{
               flexShrink: 0,
-              padding: "12px 16px",
+              padding: "12px 14px",
               borderRadius: 8,
               border: `1px solid ${listening ? "#ff6b35" : "#00d9ff66"}`,
               background: listening ? "#ff6b3522" : "#0a0d14cc",
@@ -191,7 +189,7 @@ export default function Workspace({ projectId }) {
           type="submit"
           style={{
             flexShrink: 0,
-            padding: "12px 20px",
+            padding: "12px 18px",
             borderRadius: 8,
             border: "none",
             background: "#00d9ff",
