@@ -78,12 +78,50 @@ export default function App() {
 
   if (!projectId) {
     return (
-      <div style={{ color: "#e6faff", fontFamily: "monospace", padding: 40, background: "#05060a", height: "100dvh" }}>
-        <h2>NEXUS</h2>
-        <p>Setting up your workspace...</p>
+      <div style={{ display: "flex", height: "100dvh", background: "#05060a" }}>
+        <Sidebar
+          user={user}
+          currentProjectId={null}
+          onSelectProject={(id) => {
+            const url = new URL(window.location.href);
+            url.searchParams.set("project", id);
+            window.history.replaceState({}, "", url);
+            setProjectId(id);
+          }}
+          onLogout={() => {
+            localStorage.removeItem("nexus_token");
+            localStorage.removeItem("nexus_user");
+            window.location.href = "/";
+          }}
+        />
+        <div style={{ flex: 1, color: "#e6faff", fontFamily: "monospace", padding: 40 }}>
+          <h2>NEXUS</h2>
+          <p>Setting up your workspace...</p>
+        </div>
       </div>
     );
   }
 
-  return <Workspace projectId={projectId} />;
+  return (
+    <div style={{ display: "flex", height: "100dvh", background: "#05060a" }}>
+      <Sidebar
+        user={user}
+        currentProjectId={projectId}
+        onSelectProject={(id) => {
+          const url = new URL(window.location.href);
+          url.searchParams.set("project", id);
+          window.history.replaceState({}, "", url);
+          setProjectId(id);
+        }}
+        onLogout={() => {
+          localStorage.removeItem("nexus_token");
+          localStorage.removeItem("nexus_user");
+          window.location.href = "/";
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Workspace projectId={projectId} />
+      </div>
+    </div>
+  );
 }
