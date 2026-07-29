@@ -184,58 +184,71 @@ export default function AuthPage({ onAuthenticated }) {
       style={{
         width: "100vw",
         height: "100dvh",
-        display: "flex",
+        position: "relative",
         background: "#05060a",
         overflow: "hidden",
         fontFamily: "monospace",
       }}
     >
-      {/* Left: 3D orb */}
-      <div style={{ flex: 1, position: "relative", display: window.innerWidth < 768 ? "none" : "block" }}>
+      {/* 3D orb — always rendered, full-screen background on all sizes */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <OrbScene />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 40,
-            left: 40,
-            color: "#e6faff",
-            maxWidth: 320,
-          }}
-        >
-          <div style={{ fontSize: 28, fontWeight: 700, color: "#00d9ff", letterSpacing: 1 }}>NEXUS</div>
-          <div style={{ fontSize: 13, color: "#8fd9ec99", marginTop: 6 }}>
-            Autonomous AI developer workspace
-          </div>
+      </div>
+
+      {/* Dark gradient overlay so text/card stay readable over the orb */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          background:
+            "radial-gradient(circle at 30% 50%, transparent 0%, #05060acc 60%, #05060a 100%)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Brand label, top-left */}
+      <div style={{ position: "absolute", top: 24, left: 24, zIndex: 2, color: "#e6faff" }}>
+        <div style={{ fontSize: "clamp(20px, 4vw, 28px)", fontWeight: 700, color: "#00d9ff", letterSpacing: 1 }}>
+          NEXUS
+        </div>
+        <div style={{ fontSize: 12, color: "#8fd9ec99", marginTop: 4 }}>
+          Autonomous AI developer workspace
         </div>
       </div>
 
-      {/* Right: auth card */}
+      {/* Auth card, centered on mobile, right-aligned on desktop */}
       <div
         style={{
-          flex: "0 0 min(480px, 100%)",
+          position: "absolute",
+          inset: 0,
+          zIndex: 2,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
+          justifyContent: window.innerWidth < 768 ? "center" : "flex-end",
+          padding: "16px",
         }}
       >
         <div
           style={{
             width: "100%",
             maxWidth: 380,
-            padding: 32,
+            marginRight: window.innerWidth < 768 ? 0 : "6vw",
+            padding: "clamp(20px, 5vw, 32px)",
             borderRadius: 20,
-            background: "rgba(10, 13, 20, 0.55)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
+            background: "rgba(10, 13, 20, 0.6)",
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
             border: "1px solid transparent",
             backgroundImage:
-              "linear-gradient(rgba(10,13,20,0.55), rgba(10,13,20,0.55)), linear-gradient(135deg, #00d9ff55, #39ffe022, #ff6b3533)",
+              "linear-gradient(rgba(10,13,20,0.6), rgba(10,13,20,0.6)), linear-gradient(135deg, #00d9ff66, #39ffe033, #ff6b3544)",
             backgroundOrigin: "border-box",
             backgroundClip: "padding-box, border-box",
-            boxShadow: "0 0 60px #00d9ff11, 0 20px 60px #00000066",
+            boxShadow: "0 0 60px #00d9ff22, 0 20px 60px #00000088",
             transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             color: "#e6faff",
+            maxHeight: "92dvh",
+            overflowY: "auto",
           }}
         >
           <h2 style={{ margin: 0, fontSize: 22, color: "#00d9ff" }}>
