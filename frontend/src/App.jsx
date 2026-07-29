@@ -1,3 +1,4 @@
+import Sidebar from "./components/Sidebar";
 import { useEffect, useState } from "react";
 import Workspace from "./scenes/Workspace";
 import AuthPage from "./pages/AuthPage";
