@@ -1,18 +1,14 @@
 """
 NEXUS — Application entrypoint.
-
     uvicorn app.main:app --reload
-
 This wires together the REST API, WebSocket gateway, and DB lifecycle.
 The 3D frontend talks to this over HTTP for commands/history and over
 WebSocket for the live agent activity feed.
 """
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from app.api import analytics, deploy, graph, projects, ws
+from app.api import analytics, auth, deploy, graph, projects, ws
 from app.core.config import get_settings
 from app.db.session import init_db
 
@@ -35,6 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(analytics.router)
 app.include_router(graph.router)
