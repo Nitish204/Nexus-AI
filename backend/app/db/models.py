@@ -39,6 +39,22 @@ class TaskStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class AuthProvider(str, enum.Enum):
+    LOCAL = "local"
+    GOOGLE = "google"
+    GITHUB = "github"
+
+
+class User(SQLModel, table=True):
+    id: str = Field(default_factory=new_id, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    name: str = ""
+    password_hash: str | None = None  # null for OAuth-only users
+    provider: AuthProvider = AuthProvider.LOCAL
+    avatar_url: str = ""
+    created_at: datetime = Field(default_factory=now)
+
+
 class Project(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     name: str
