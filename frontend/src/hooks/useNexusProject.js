@@ -48,11 +48,21 @@ export function useNexusProject(projectId) {
 
   const sendCommand = useCallback(
     async (text) => {
-      await fetch(`${API_BASE}/api/projects/${projectId}/command`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ text }),
-      });
+      console.log("[NEXUS] sendCommand called with:", text, "projectId:", projectId);
+      try {
+        const res = await fetch(`${API_BASE}/api/projects/${projectId}/command`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json().catch(() => null);
+        console.log("[NEXUS] sendCommand response:", res.status, data);
+        if (!res.ok) {
+          console.error("[NEXUS] sendCommand FAILED with status", res.status, data);
+        }
+      } catch (err) {
+        console.error("[NEXUS] sendCommand THREW an exception before/during fetch:", err);
+      }
     },
     [projectId]
   );
