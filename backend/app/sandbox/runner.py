@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass, field
 
 import docker
-from docker.errors import ContainerError, ImageNotFound, APIError
+from docker.errors import ImageNotFound, DockerException
 
 from app.core.config import get_settings
 from app.db.models import GeneratedFile
@@ -40,6 +40,13 @@ class SandboxResult:
     timed_out: bool = False
     error: str = ""
     files_executed: list[str] = field(default_factory=list)
+    # True only when Docker itself isn't reachable at all (e.g. no
+    # daemon on this host, like Render's standard web service tier) —
+    # distinct from `success=False`, which means Docker WAS available
+    # and the code/tests genuinely failed. The orchestrator treats
+    # these very differently: a real failure triggers the fix-and-retry
+    # loop; an unavailable daemon should never block the pipeline.
+    daemon_unavailable: bool = False
 
 
 class SandboxRunner:
@@ -108,8 +115,28 @@ class SandboxRunner:
 
         except ImageNotFound:
             return SandboxResult(success=False, error=f"Sandbox image {settings.docker_image_python} not found locally — run `docker pull {settings.docker_image_python}`.")
-        except (ContainerError, APIError) as exc:
-            return SandboxResult(success=False, error=f"Docker error: {exc}")
+        except DockerException as exc:
+            # Covers "no Docker daemon reachable" (e.g. Render's standard
+            # web service tier has none) as well as APIError/
+            # ContainerError, which are themselves DockerException
+            # subclasses. Previously only the narrower APIError/
+            # ContainerError pair was caught here, so a missing daemon
+            # raised straight through this function, out of
+            # asyncio.gather() in the orchestrator, and silently killed
+            # the entire background task with no error surfaced anywhere.
+            return SandboxResult(
+                success=True,  # fail OPEN — never let sandbox unavailability block code generation
+                daemon_unavailable=True,
+                error=f"Sandbox skipped — Docker unavailable on this host: {exc}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Last-resort safety net: whatever else goes wrong here,
+            # never let it escape and take down the whole orchestrator.
+            return SandboxResult(
+                success=True,
+                daemon_unavailable=True,
+                error=f"Sandbox skipped — unexpected error: {exc}",
+            )
         finally:
             if container is not None:
                 try:
