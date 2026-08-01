@@ -5,12 +5,26 @@ This wires together the REST API, WebSocket gateway, and DB lifecycle.
 The 3D frontend talks to this over HTTP for commands/history and over
 WebSocket for the live agent activity feed.
 """
+import logging
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import analytics, auth, deploy, graph, projects, ws
 from app.core.config import get_settings
 from app.db.session import init_db
+
+# Without this, Python's root logger defaults to WARNING with no
+# configured handler, meaning every logger.info() call added throughout
+# app/agents and app/services would be silently dropped — nothing
+# server-side would ever be visible in Render's logs beyond uvicorn's
+# own request access lines. This makes the "nexus.*" loggers (and
+# anything else) actually reach stdout, which Render captures.
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 settings = get_settings()
 
