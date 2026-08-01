@@ -14,6 +14,7 @@ to reason about and debug in early phases. Swappable later for
 langgraph or a Celery-based scheduler without touching agent code.
 """
 import asyncio
+import logging
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -27,6 +28,8 @@ from app.core.events import event_bus
 from app.db.models import AgentRole, GeneratedFile, Task, TaskStatus
 from app.sandbox.runner import sandbox_runner
 from app.services.graph import rebuild_graph_for_project
+
+logger = logging.getLogger("nexus.orchestrator")
 
 AGENT_REGISTRY = {
     AgentRole.PRODUCT_MANAGER: ProductManagerAgent,
@@ -52,26 +55,45 @@ class Orchestrator:
 
     async def kick_off(self, project_id: str, request_text: str) -> None:
         """Entry point: user (or voice command) submits a feature request."""
-        pm_task = Task(
-            project_id=project_id,
-            title="Decompose feature request",
-            description=request_text,
-            assigned_role=AgentRole.PRODUCT_MANAGER,
-            status=TaskStatus.PENDING,
-        )
-        self.session.add(pm_task)
-        await self.session.commit()
-        await self.session.refresh(pm_task)
+        logger.info("kick_off starting for project=%s: %r", project_id, request_text[:200])
+        try:
+            pm_task = Task(
+                project_id=project_id,
+                title="Decompose feature request",
+                description=request_text,
+                assigned_role=AgentRole.PRODUCT_MANAGER,
+                status=TaskStatus.PENDING,
+            )
+            self.session.add(pm_task)
+            await self.session.commit()
+            await self.session.refresh(pm_task)
 
-        pm_agent = ProductManagerAgent(self.session)
-        await pm_agent.run(pm_task)
+            pm_agent = ProductManagerAgent(self.session)
+            await pm_agent.run(pm_task)
 
-        await self.run_until_settled(project_id)
+            await self.run_until_settled(project_id)
+            logger.info("kick_off finished for project=%s", project_id)
+
+        except Exception as exc:  # noqa: BLE001
+            # Last-resort safety net: this is the outermost boundary of
+            # the whole background task. Anything that escapes here
+            # previously vanished completely — no log, no DB update, no
+            # event — because FastAPI's BackgroundTasks doesn't surface
+            # exceptions anywhere visible on its own.
+            logger.error("kick_off CRASHED for project=%s: %s", project_id, exc, exc_info=True)
+            await event_bus.publish(
+                project_id, "orchestration_error", {"project_id": project_id, "error": str(exc)}
+            )
 
     async def run_until_settled(self, project_id: str) -> None:
-        for _ in range(MAX_ITERATIONS):
+        for iteration in range(MAX_ITERATIONS):
             runnable = await self._next_runnable_tasks(project_id)
+            logger.info(
+                "run_until_settled project=%s iteration=%d runnable=%s",
+                project_id, iteration, [(t.id, t.assigned_role.value) for t in runnable],
+            )
             if not runnable:
+                logger.info("run_until_settled project=%s: no more runnable tasks, stopping", project_id)
                 break
 
             # run this wave of unblocked tasks concurrently — this is
