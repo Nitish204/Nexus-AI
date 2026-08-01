@@ -13,6 +13,7 @@ orchestrator can crash and resume, and any agent instance is disposable.
 from __future__ import annotations
 
 import abc
+import logging
 
 from openai import AsyncOpenAI
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -23,6 +24,7 @@ from app.core.events import event_bus
 from app.db.models import AgentMessage, AgentRole, GeneratedFile, Task, TaskStatus
 
 settings = get_settings()
+logger = logging.getLogger("nexus.agents")
 
 
 class AgentBase(abc.ABC):
@@ -34,9 +36,16 @@ class AgentBase(abc.ABC):
         # Groq exposes an OpenAI-compatible endpoint, so the standard
         # openai SDK works unchanged — just point base_url at Groq and
         # use a Groq API key instead of an OpenAI one.
+        # Explicit timeout: the SDK's default can be up to 10 minutes,
+        # which means a hung network call would sit completely silent
+        # (no error, no log, nothing) for a very long time before ever
+        # surfacing as a failure. 45s is generous for Groq (typically
+        # sub-second to a few seconds) while still failing fast enough
+        # to be diagnosable.
         self.client = AsyncOpenAI(
             api_key=settings.groq_api_key,
             base_url="https://api.groq.com/openai/v1",
+            timeout=45.0,
         )
 
     # ---- to be implemented by each concrete agent ----
@@ -70,6 +79,8 @@ class AgentBase(abc.ABC):
         return "\n".join(f"--- {f.path} ---\n{f.content[:1500]}" for f in files)
 
     async def run(self, task: Task) -> Task:
+        logger.info("[%s] task=%s starting: %s", self.role.value, task.id, task.title)
+
         task.status = TaskStatus.IN_PROGRESS
         self.session.add(task)
         await self.session.commit()
@@ -83,6 +94,7 @@ class AgentBase(abc.ABC):
         await self._log(task, f"Starting: {task.title}", "status")
 
         try:
+            logger.info("[%s] task=%s calling model=%s", self.role.value, task.id, settings.agent_model)
             full_text = ""
             stream = await self.client.chat.completions.create(
                 model=settings.agent_model,
@@ -104,11 +116,27 @@ class AgentBase(abc.ABC):
                     {"task_id": task.id, "role": self.role.value, "delta": delta},
                 )
 
+            logger.info("[%s] task=%s LLM call complete, %d chars received", self.role.value, task.id, len(full_text))
+
+            if not full_text.strip():
+                # A real failure mode worth naming explicitly: the call
+                # succeeded (no exception) but returned nothing — e.g. a
+                # model name that's silently invalid/deprecated on
+                # Groq's side, or the request being rejected in a way
+                # that doesn't raise. Without this check it looks
+                # identical to a hang from the outside.
+                raise ValueError(
+                    f"Model '{settings.agent_model}' returned an empty response. "
+                    "Verify this model name is still valid at console.groq.com/docs/models."
+                )
+
             await self.handle_response(task, full_text)
             task.status = TaskStatus.IN_REVIEW
             task.result_summary = full_text[:280]
+            logger.info("[%s] task=%s completed successfully", self.role.value, task.id)
 
         except Exception as exc:  # noqa: BLE001
+            logger.error("[%s] task=%s FAILED: %s", self.role.value, task.id, exc, exc_info=True)
             task.status = TaskStatus.FAILED
             await self._log(task, f"Error: {exc}", "error")
 
