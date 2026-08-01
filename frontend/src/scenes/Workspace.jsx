@@ -32,28 +32,88 @@ export default function Workspace({ projectId }) {
     ];
 
     let index = 0;
+    let cancelled = false;
+
+    // The Web Speech API only exposes whatever synthetic voices the OS/
+    // browser ships — there's no literal "roar"/growl effect available,
+    // only voice selection plus pitch/rate tuning. This picks the
+    // deepest-sounding male system voice available, in priority order
+    // of ones known to sound notably deep/authoritative, falling back
+    // to any voice whose name suggests "male" if none of those exist,
+    // and finally to the browser default if the OS exposes no gender
+    // hints at all (varies a lot by platform).
+    const pickDeepMaleVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return null;
+
+      const preferredNames = [
+        "Google UK English Male",
+        "Microsoft David",
+        "Microsoft Guy",
+        "Daniel",
+        "Fred",
+        "Aaron",
+        "Gordon",
+        "Arthur",
+      ];
+      for (const name of preferredNames) {
+        const match = voices.find((v) => v.name.includes(name));
+        if (match) return match;
+      }
+
+      const genericMale = voices.find((v) => /male/i.test(v.name) && !/female/i.test(v.name));
+      if (genericMale) return genericMale;
+
+      return null; // fall back to the browser's default voice
+    };
 
     const speakNext = () => {
-      if (index >= lines.length) return;
+      if (cancelled || index >= lines.length) return;
       const utterance = new SpeechSynthesisUtterance(lines[index]);
-      utterance.rate = 1;
-      utterance.pitch = 1;
+      const voice = pickDeepMaleVoice();
+      if (voice) utterance.voice = voice;
+      // Lower pitch + slightly slower rate = the closest a synthetic
+      // voice can get to a deep, commanding delivery. Pitch below
+      // ~0.6 starts sounding distorted/robotic on most engines rather
+      // than genuinely deeper, so this stays just above that floor.
+      utterance.pitch = 0.65;
+      utterance.rate = 0.92;
       utterance.onend = () => {
+        if (cancelled) return;
         index++;
         setTimeout(speakNext, 500);
       };
       window.speechSynthesis.speak(utterance);
     };
 
-    const start = () => speakNext();
+    // React.StrictMode (see main.jsx) intentionally mounts every
+    // component twice in development — mount, cleanup, mount again —
+    // to surface missing-cleanup bugs. The throwaway first mount used
+    // to call speak() immediately, and speechSynthesis.cancel() in
+    // cleanup doesn't reliably silence audio that's already started in
+    // time, so that phantom first mount was often audible before the
+    // real mount's greeting started right after it — which is exactly
+    // why "Welcome back" was heard twice. Deferring the actual speak()
+    // call by one tick means the throwaway mount's cleanup (which sets
+    // `cancelled = true` and clears the timer) always wins the race,
+    // so only the mount that actually survives ever produces sound.
+    // This delay is imperceptible and only matters in development —
+    // StrictMode's double-invoke doesn't happen in production builds.
+    const startTimer = setTimeout(() => {
+      if (cancelled) return;
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = speakNext;
+      } else {
+        speakNext();
+      }
+    }, 0);
 
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = start;
-    } else {
-      start();
-    }
-
-    return () => window.speechSynthesis.cancel();
+    return () => {
+      cancelled = true;
+      clearTimeout(startTimer);
+      window.speechSynthesis.onvoiceschanged = null;
+      window.speechSynthesis.cancel();
+    };
   }, []);
 
   // Phase 7: voice fills the same input a typed command would, then
