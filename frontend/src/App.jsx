@@ -34,18 +34,32 @@ export default function App() {
       .finally(() => setCheckingAuth(false));
   }, []);
 
-  // Auto-create a project once logged in, if none in URL
+  // Auto-select the most recent project on login, or create one only if none exist
   useEffect(() => {
     if (!user || projectId || creating) return;
     setCreating(true);
     const token = localStorage.getItem("nexus_token");
-    fetch(`${API_BASE}/api/projects`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ name: "New Project" }),
-    })
+
+    fetch(`${API_BASE}/api/projects`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => res.json())
-      .then((data) => {
+      .then(async (existing) => {
+        if (Array.isArray(existing) && existing.length > 0) {
+          const mostRecent = existing
+            .slice()
+            .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+          const url = new URL(window.location.href);
+          url.searchParams.set("project", mostRecent.id);
+          window.history.replaceState({}, "", url);
+          setProjectId(mostRecent.id);
+          return;
+        }
+        // No projects exist yet for this user — create the first one
+        const res = await fetch(`${API_BASE}/api/projects`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: "New Project" }),
+        });
+        const data = await res.json();
         const url = new URL(window.location.href);
         url.searchParams.set("project", data.id);
         window.history.replaceState({}, "", url);
@@ -54,6 +68,19 @@ export default function App() {
       .catch((err) => setError(err.message))
       .finally(() => setCreating(false));
   }, [user, projectId, creating]);
+
+  const handleSelectProject = (id) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("project", id);
+    window.history.replaceState({}, "", url);
+    setProjectId(id);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("nexus_token");
+    localStorage.removeItem("nexus_user");
+    window.location.href = "/";
+  };
 
   if (checkingAuth) {
     return (
@@ -82,17 +109,8 @@ export default function App() {
         <Sidebar
           user={user}
           currentProjectId={null}
-          onSelectProject={(id) => {
-            const url = new URL(window.location.href);
-            url.searchParams.set("project", id);
-            window.history.replaceState({}, "", url);
-            setProjectId(id);
-          }}
-          onLogout={() => {
-            localStorage.removeItem("nexus_token");
-            localStorage.removeItem("nexus_user");
-            window.location.href = "/";
-          }}
+          onSelectProject={handleSelectProject}
+          onLogout={handleLogout}
         />
         <div style={{ flex: 1, color: "#e6faff", fontFamily: "monospace", padding: 40 }}>
           <h2>NEXUS</h2>
@@ -107,17 +125,8 @@ export default function App() {
       <Sidebar
         user={user}
         currentProjectId={projectId}
-        onSelectProject={(id) => {
-          const url = new URL(window.location.href);
-          url.searchParams.set("project", id);
-          window.history.replaceState({}, "", url);
-          setProjectId(id);
-        }}
-        onLogout={() => {
-          localStorage.removeItem("nexus_token");
-          localStorage.removeItem("nexus_user");
-          window.location.href = "/";
-        }}
+        onSelectProject={handleSelectProject}
+        onLogout={handleLogout}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <Workspace projectId={projectId} />
