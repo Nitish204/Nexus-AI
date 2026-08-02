@@ -13,9 +13,10 @@ orchestrator can crash and resume, and any agent instance is disposable.
 from __future__ import annotations
 
 import abc
+import asyncio
 import logging
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
@@ -93,52 +94,81 @@ class AgentBase(abc.ABC):
 
         await self._log(task, f"Starting: {task.title}", "status")
 
-        try:
-            logger.info("[%s] task=%s calling model=%s", self.role.value, task.id, settings.agent_model)
-            full_text = ""
-            stream = await self.client.chat.completions.create(
-                model=settings.agent_model,
-                max_tokens=settings.max_tokens_per_agent_call,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                stream=True,
-            )
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
-                if not delta:
+        max_rate_limit_retries = 1
+        for attempt in range(max_rate_limit_retries + 1):
+            try:
+                logger.info("[%s] task=%s calling model=%s (attempt %d)", self.role.value, task.id, settings.agent_model, attempt + 1)
+                full_text = ""
+                stream = await self.client.chat.completions.create(
+                    model=settings.agent_model,
+                    max_tokens=settings.max_tokens_per_agent_call,
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    stream=True,
+                )
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta.content or ""
+                    if not delta:
+                        continue
+                    full_text += delta
+                    await event_bus.publish(
+                        task.project_id,
+                        "agent_stream",
+                        {"task_id": task.id, "role": self.role.value, "delta": delta},
+                    )
+
+                logger.info("[%s] task=%s LLM call complete, %d chars received", self.role.value, task.id, len(full_text))
+
+                if not full_text.strip():
+                    # A real failure mode worth naming explicitly: the
+                    # call succeeded (no exception) but returned nothing
+                    # — e.g. a model name that's silently invalid/
+                    # deprecated on Groq's side, or the request being
+                    # rejected in a way that doesn't raise. Without this
+                    # check it looks identical to a hang from outside.
+                    raise ValueError(
+                        f"Model '{settings.agent_model}' returned an empty response. "
+                        "Verify this model name is still valid at console.groq.com/docs/models."
+                    )
+
+                await self.handle_response(task, full_text)
+                task.status = TaskStatus.IN_REVIEW
+                task.result_summary = full_text[:280]
+                logger.info("[%s] task=%s completed successfully", self.role.value, task.id)
+                break  # success — leave the retry loop
+
+            except RateLimitError as exc:
+                # Groq's free tier is capped at a fairly low tokens-per-
+                # minute budget shared across every agent call in a run
+                # — this is the single most common failure mode when
+                # multiple agents run back-to-back. One retry after a
+                # cooldown recovers cleanly from most transient hits;
+                # if it still fails, the message tells the person
+                # exactly why, instead of a generic "Error: ...".
+                logger.warning("[%s] task=%s hit Groq rate limit (attempt %d): %s", self.role.value, task.id, attempt + 1, exc)
+                if attempt < max_rate_limit_retries:
+                    await self._log(task, "Hit Groq's free-tier rate limit — waiting 25s and retrying once...", "status")
+                    await asyncio.sleep(25)
                     continue
-                full_text += delta
-                await event_bus.publish(
-                    task.project_id,
-                    "agent_stream",
-                    {"task_id": task.id, "role": self.role.value, "delta": delta},
+                logger.error("[%s] task=%s FAILED: rate limit persisted after retry", self.role.value, task.id)
+                task.status = TaskStatus.FAILED
+                await self._log(
+                    task,
+                    "Failed: Groq's free-tier rate limit (tokens-per-minute) was exceeded and persisted "
+                    "after one retry. This usually means multiple agents ran in the same request and "
+                    "collectively exceeded the per-minute budget. Try a smaller/more specific request, "
+                    "space out commands, or upgrade your Groq plan for a higher TPM limit.",
+                    "error",
                 )
+                break
 
-            logger.info("[%s] task=%s LLM call complete, %d chars received", self.role.value, task.id, len(full_text))
-
-            if not full_text.strip():
-                # A real failure mode worth naming explicitly: the call
-                # succeeded (no exception) but returned nothing — e.g. a
-                # model name that's silently invalid/deprecated on
-                # Groq's side, or the request being rejected in a way
-                # that doesn't raise. Without this check it looks
-                # identical to a hang from the outside.
-                raise ValueError(
-                    f"Model '{settings.agent_model}' returned an empty response. "
-                    "Verify this model name is still valid at console.groq.com/docs/models."
-                )
-
-            await self.handle_response(task, full_text)
-            task.status = TaskStatus.IN_REVIEW
-            task.result_summary = full_text[:280]
-            logger.info("[%s] task=%s completed successfully", self.role.value, task.id)
-
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[%s] task=%s FAILED: %s", self.role.value, task.id, exc, exc_info=True)
-            task.status = TaskStatus.FAILED
-            await self._log(task, f"Error: {exc}", "error")
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[%s] task=%s FAILED: %s", self.role.value, task.id, exc, exc_info=True)
+                task.status = TaskStatus.FAILED
+                await self._log(task, f"Error: {exc}", "error")
+                break
 
         self.session.add(task)
         await self.session.commit()
