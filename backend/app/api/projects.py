@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.security import decode_access_token
-from app.db.models import GeneratedFile, Project, Task, Deployment
+from app.db.models import AnalysisResult, GeneratedFile, GraphEdge, Project, Task, Deployment
 from app.db.session import get_session, get_session_context
 from app.services.orchestrator import Orchestrator
 
@@ -14,6 +14,10 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 class CreateProjectRequest(BaseModel):
     name: str
     description: str = ""
+
+
+class RenameProjectRequest(BaseModel):
+    name: str
 
 
 class CommandRequest(BaseModel):
@@ -75,6 +79,40 @@ async def get_project(
     user_id: str = Depends(get_current_user_id),
 ):
     return await get_owned_project(project_id, session, user_id)
+
+
+@router.patch("/{project_id}")
+async def rename_project(
+    project_id: str,
+    body: RenameProjectRequest,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
+):
+    project = await get_owned_project(project_id, session, user_id)
+    project.name = body.name.strip() or project.name
+    project.name_is_default = False
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id),
+):
+    project = await get_owned_project(project_id, session, user_id)
+    # Clean up dependent rows first — no cascade configured at the DB
+    # level, so orphaned rows would otherwise be left behind silently.
+    for model in (GeneratedFile, Task, Deployment, GraphEdge, AnalysisResult):
+        result = await session.exec(select(model).where(model.project_id == project_id))
+        for row in result.all():
+            await session.delete(row)
+    await session.delete(project)
+    await session.commit()
+    return {"status": "deleted", "project_id": project_id}
 
 
 @router.get("/{project_id}/files")
