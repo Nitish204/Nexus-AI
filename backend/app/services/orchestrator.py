@@ -49,6 +49,14 @@ SANDBOX_GATED_ROLES = {AgentRole.BACKEND_ENGINEER, AgentRole.QA_ENGINEER}
 MAX_ITERATIONS = 20
 MAX_FIX_ATTEMPTS = 2  # self-correction retries before giving up and marking FAILED
 
+# Small pause between one agent finishing and the next one starting.
+# Groq's free tier caps total token usage per minute across ALL agent
+# calls combined — running agents back-to-back with zero gap clusters
+# spending right at the start of each per-minute window and makes
+# hitting that ceiling more likely. Spacing calls out lets the budget
+# recover between them instead.
+DELAY_BETWEEN_TASKS_SECONDS = 4
+
 
 class Orchestrator:
     def __init__(self, session: AsyncSession):
@@ -59,11 +67,15 @@ class Orchestrator:
         logger.info("kick_off starting for project=%s: %r", project_id, request_text[:200])
         try:
             # Rename the project from its first real request instead of
-            # leaving it as the generic "New Project" placeholder — this
-            # is what the sidebar's history list actually displays.
+            # leaving it as a generic default placeholder — this is
+            # what the sidebar's history list actually displays. Only
+            # does this while name_is_default is still True, so a name
+            # the user set manually (even before their first command)
+            # is never silently overwritten.
             project = await self.session.get(Project, project_id)
-            if project and project.name == "New Project":
+            if project and project.name_is_default:
                 project.name = request_text[:60] + ("..." if len(request_text) > 60 else "")
+                project.name_is_default = False
                 self.session.add(project)
                 await self.session.commit()
 
@@ -106,24 +118,28 @@ class Orchestrator:
                 logger.info("run_until_settled project=%s: no more runnable tasks, stopping", project_id)
                 break
 
-            # Run this wave of unblocked tasks concurrently — this is
-            # what lets e.g. QA and DevOps agents work "at the same time"
-            # once their dependencies clear, visually shown as multiple
-            # agents active simultaneously in the 3D workspace.
+            # Run this wave of unblocked tasks ONE AT A TIME, with a
+            # short pause between each — agents "take turns" rather than
+            # all hitting Groq's API at once. This trades a bit of
+            # wall-clock speed for staying comfortably under the
+            # free-tier per-minute token budget shared across every
+            # agent call, which is what was causing frequent 429s when
+            # e.g. Backend and DevOps both became runnable together and
+            # fired simultaneously.
             #
-            # IMPORTANT: each concurrent task gets its OWN database
-            # session (see _run_task) rather than sharing self.session.
-            # SQLAlchemy's AsyncSession is not safe for concurrent use
-            # from multiple coroutines — two tasks both committing
-            # around the same time on one shared session corrupts its
-            # internal transaction state (IllegalStateChangeError),
-            # which used to crash the entire orchestration run the
-            # instant more than one task became runnable in the same
-            # wave. Passing only the task ID (not the ORM object) forces
-            # each task to load its own fresh copy in its own session,
-            # since an object loaded in one session can't safely cross
-            # into another.
-            await asyncio.gather(*[self._run_task(t.id, project_id) for t in runnable])
+            # Each task still gets its own database session (see
+            # _run_task) — that fix from the concurrent-session bug
+            # stays in place regardless of whether tasks run one at a
+            # time or in parallel.
+            for t in runnable:
+                await self._run_task(t.id, project_id)
+                # Brief pause before the next agent's turn. Worst case
+                # this adds one small unnecessary pause right at the
+                # very end of a run (we don't know a task is the last
+                # one until the *next* iteration comes back empty) —
+                # harmless, a few seconds of idle time, not worth the
+                # extra complexity to avoid.
+                await asyncio.sleep(DELAY_BETWEEN_TASKS_SECONDS)
 
         await event_bus.publish(project_id, "orchestration_complete", {"project_id": project_id})
 
@@ -141,8 +157,10 @@ class Orchestrator:
         return [t for t in pending if all(dep in done_ids for dep in t.depends_on)]
 
     async def _run_task(self, task_id: str, project_id: str) -> None:
-        # Own session for this task's entire lifetime — never shared
-        # with sibling tasks running concurrently in the same gather().
+        # Own session for this task's lifetime. Tasks now run
+        # sequentially (see run_until_settled), but this pattern is kept
+        # regardless — it's what made concurrent execution safe before,
+        # and costs nothing running sequentially either.
         async with get_session_context() as session:
             task = await session.get(Task, task_id)
             if task is None:
