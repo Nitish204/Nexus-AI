@@ -58,6 +58,12 @@ class User(SQLModel, table=True):
 class Project(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     name: str
+    # True until the user explicitly renames the project (see the
+    # rename endpoint in api/projects.py) or the orchestrator
+    # auto-renames it from the first command. Lets the orchestrator
+    # safely auto-name a fresh project from its first request without
+    # ever silently overwriting a name the user already chose.
+    name_is_default: bool = True
     description: str = ""
     owner_id: str = Field(index=True)
     created_at: datetime = Field(default_factory=now)
