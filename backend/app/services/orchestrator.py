@@ -26,6 +26,7 @@ from app.agents.product_manager import ProductManagerAgent
 from app.agents.qa_engineer import QAEngineerAgent
 from app.core.events import event_bus
 from app.db.models import AgentRole, GeneratedFile, Task, TaskStatus
+from app.db.session import get_session_context
 from app.sandbox.runner import sandbox_runner
 from app.services.graph import rebuild_graph_for_project
 
@@ -96,11 +97,24 @@ class Orchestrator:
                 logger.info("run_until_settled project=%s: no more runnable tasks, stopping", project_id)
                 break
 
-            # run this wave of unblocked tasks concurrently — this is
+            # Run this wave of unblocked tasks concurrently — this is
             # what lets e.g. QA and DevOps agents work "at the same time"
             # once their dependencies clear, visually shown as multiple
             # agents active simultaneously in the 3D workspace.
-            await asyncio.gather(*[self._run_task(t) for t in runnable])
+            #
+            # IMPORTANT: each concurrent task gets its OWN database
+            # session (see _run_task) rather than sharing self.session.
+            # SQLAlchemy's AsyncSession is not safe for concurrent use
+            # from multiple coroutines — two tasks both committing
+            # around the same time on one shared session corrupts its
+            # internal transaction state (IllegalStateChangeError),
+            # which used to crash the entire orchestration run the
+            # instant more than one task became runnable in the same
+            # wave. Passing only the task ID (not the ORM object) forces
+            # each task to load its own fresh copy in its own session,
+            # since an object loaded in one session can't safely cross
+            # into another.
+            await asyncio.gather(*[self._run_task(t.id, project_id) for t in runnable])
 
         await event_bus.publish(project_id, "orchestration_complete", {"project_id": project_id})
 
@@ -117,65 +131,73 @@ class Orchestrator:
 
         return [t for t in pending if all(dep in done_ids for dep in t.depends_on)]
 
-    async def _run_task(self, task: Task) -> None:
-        agent_cls = AGENT_REGISTRY[task.assigned_role]
+    async def _run_task(self, task_id: str, project_id: str) -> None:
+        # Own session for this task's entire lifetime — never shared
+        # with sibling tasks running concurrently in the same gather().
+        async with get_session_context() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                logger.error("_run_task: task_id=%s not found (project=%s)", task_id, project_id)
+                return
 
-        attempt = 0
-        while True:
-            agent = agent_cls(self.session)
-            updated = await agent.run(task)
+            agent_cls = AGENT_REGISTRY[task.assigned_role]
 
-            if updated.status != TaskStatus.IN_REVIEW:
-                # agent itself failed (e.g. bad JSON, API error) — nothing to gate
-                break
+            attempt = 0
+            while True:
+                agent = agent_cls(session)
+                updated = await agent.run(task)
 
-            if task.assigned_role not in SANDBOX_GATED_ROLES:
-                updated.status = TaskStatus.DONE
-                self.session.add(updated)
-                await self.session.commit()
-                break
+                if updated.status != TaskStatus.IN_REVIEW:
+                    # agent itself failed (e.g. bad JSON, API error) — nothing to gate
+                    break
 
-            # Phase 3: gate completion on real execution, not just the
-            # agent's own claim that it's done.
-            result = await self._run_sandbox_gate(task)
-            await event_bus.publish(
-                task.project_id,
-                "sandbox_result",
-                {"task_id": task.id, "success": result.success, "stdout": result.stdout[-2000:], "error": result.error},
-            )
+                if task.assigned_role not in SANDBOX_GATED_ROLES:
+                    updated.status = TaskStatus.DONE
+                    session.add(updated)
+                    await session.commit()
+                    break
 
-            if result.success:
-                updated.status = TaskStatus.DONE
-                self.session.add(updated)
-                await self.session.commit()
-                break
+                # Phase 3: gate completion on real execution, not just the
+                # agent's own claim that it's done.
+                result = await self._run_sandbox_gate(session, project_id)
+                await event_bus.publish(
+                    project_id,
+                    "sandbox_result",
+                    {"task_id": task.id, "success": result.success, "stdout": result.stdout[-2000:], "error": result.error},
+                )
 
-            attempt += 1
-            if attempt > MAX_FIX_ATTEMPTS:
-                updated.status = TaskStatus.FAILED
-                updated.result_summary = f"Sandbox execution failed after {MAX_FIX_ATTEMPTS} fix attempts."
-                self.session.add(updated)
-                await self.session.commit()
-                break
+                if result.success:
+                    updated.status = TaskStatus.DONE
+                    session.add(updated)
+                    await session.commit()
+                    break
 
-            # feed the failure back to the same agent as extra task
-            # description context and retry — this is the "fix and
-            # retest" loop.
-            failure_context = (result.error or result.stdout)[-1500:]
-            task.description += (
-                f"\n\n--- PREVIOUS ATTEMPT FAILED (attempt {attempt}) ---\n"
-                f"Fix the following error and regenerate the file(s):\n{failure_context}"
-            )
-            task.status = TaskStatus.PENDING
-            self.session.add(task)
-            await self.session.commit()
+                attempt += 1
+                if attempt > MAX_FIX_ATTEMPTS:
+                    updated.status = TaskStatus.FAILED
+                    updated.result_summary = f"Sandbox execution failed after {MAX_FIX_ATTEMPTS} fix attempts."
+                    session.add(updated)
+                    await session.commit()
+                    break
 
-        # Knowledge graph (Phase 4) stays in sync with whatever files
-        # exist after this task settles, success or failure.
-        await rebuild_graph_for_project(self.session, task.project_id)
+                # feed the failure back to the same agent as extra task
+                # description context and retry — this is the "fix and
+                # retest" loop.
+                failure_context = (result.error or result.stdout)[-1500:]
+                task.description += (
+                    f"\n\n--- PREVIOUS ATTEMPT FAILED (attempt {attempt}) ---\n"
+                    f"Fix the following error and regenerate the file(s):\n{failure_context}"
+                )
+                task.status = TaskStatus.PENDING
+                session.add(task)
+                await session.commit()
 
-    async def _run_sandbox_gate(self, task: Task):
-        result_files = await self.session.exec(
-            select(GeneratedFile).where(GeneratedFile.project_id == task.project_id)
+            # Knowledge graph (Phase 4) stays in sync with whatever files
+            # exist after this task settles, success or failure.
+            await rebuild_graph_for_project(session, project_id)
+
+    async def _run_sandbox_gate(self, session: AsyncSession, project_id: str):
+        result_files = await session.exec(
+            select(GeneratedFile).where(GeneratedFile.project_id == project_id)
         )
         return await sandbox_runner.run_python_tests(result_files.all())
