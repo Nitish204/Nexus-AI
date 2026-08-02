@@ -25,7 +25,7 @@ from app.agents.frontend_engineer import FrontendEngineerAgent
 from app.agents.product_manager import ProductManagerAgent
 from app.agents.qa_engineer import QAEngineerAgent
 from app.core.events import event_bus
-from app.db.models import AgentRole, GeneratedFile, Task, TaskStatus
+from app.db.models import AgentRole, GeneratedFile, Project, Task, TaskStatus
 from app.db.session import get_session_context
 from app.sandbox.runner import sandbox_runner
 from app.services.graph import rebuild_graph_for_project
@@ -58,6 +58,15 @@ class Orchestrator:
         """Entry point: user (or voice command) submits a feature request."""
         logger.info("kick_off starting for project=%s: %r", project_id, request_text[:200])
         try:
+            # Rename the project from its first real request instead of
+            # leaving it as the generic "New Project" placeholder — this
+            # is what the sidebar's history list actually displays.
+            project = await self.session.get(Project, project_id)
+            if project and project.name == "New Project":
+                project.name = request_text[:60] + ("..." if len(request_text) > 60 else "")
+                self.session.add(project)
+                await self.session.commit()
+
             pm_task = Task(
                 project_id=project_id,
                 title="Decompose feature request",
