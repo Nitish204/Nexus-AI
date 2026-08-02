@@ -32,9 +32,20 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM — Groq (OpenAI-compatible API, free-tier friendly)
+    # IMPORTANT: Groq's free tier for openai/gpt-oss-120b caps at 8,000
+    # tokens PER MINUTE (input + output combined), shared across every
+    # call in an orchestration run. A single agent call requesting close
+    # to that ceiling can exhaust the entire per-minute budget by
+    # itself, causing every subsequent agent (Backend, Frontend, QA,
+    # DevOps) in the same run to fail with a 429 rate-limit error —
+    # which looks exactly like "generation just stops after Product
+    # Management." 3000 leaves realistic headroom for the input prompt
+    # + output within one call while still fitting multiple agent calls
+    # inside a single TPM window. If you upgrade to Groq's paid
+    # Developer tier (much higher TPM), this can be raised significantly.
     groq_api_key: str = ""
     agent_model: str = "openai/gpt-oss-120b"
-    max_tokens_per_agent_call: int = 8192
+    max_tokens_per_agent_call: int = 3000
 
     # Sandbox
     docker_image_python: str = "python:3.12-slim"
