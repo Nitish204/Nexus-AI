@@ -7,6 +7,15 @@ function authHeaders() {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 }
 
+function StatRow({ label, value, valueColor }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "3px 0" }}>
+      <span style={{ color: "#8fd9ec99", fontSize: 11 }}>{label}</span>
+      <span style={{ color: valueColor || "#e6faff", fontSize: 13, fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
 export default function AnalyticsPanel({ projectId, deploymentStatus }) {
   const [analysis, setAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -60,52 +69,110 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
     : "—";
 
   const shownDeployment = deploymentStatus || latestDeployment;
+  const deployColor =
+    shownDeployment?.status === "live" ? "#39ff88" : shownDeployment?.status === "failed" ? "#ff6b35" : "#ffd23f";
 
   return (
     <div
       style={{
-        width: "min(260px, 88vw)",
-        padding: 16,
-        borderRadius: 12,
-        background: "#0a0d14cc",
-        border: "1px solid #39ff8844",
-        boxShadow: "0 0 40px #39ff8822",
+        width: "min(270px, 88vw)",
+        padding: "16px 16px 14px",
+        borderRadius: 14,
+        background: "linear-gradient(165deg, #0d1119ee, #0a0d14e6)",
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+        border: "1px solid #ffffff14",
+        boxShadow: "0 8px 32px #00000066, 0 0 0 1px #39ff8814, 0 0 24px #39ff8811",
         color: "#e6faff",
         fontFamily: "monospace",
-        fontSize: 12,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <strong style={{ color: "#39ff88" }}>Analytics</strong>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#39ff88", boxShadow: "0 0 8px #39ff88" }} />
+          <strong style={{ color: "#39ff88", fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            Analytics
+          </strong>
+        </div>
         <button
           onClick={runAnalysis}
           disabled={loading}
-          style={{ background: "none", border: "1px solid #39ff8866", color: "#39ff88", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}
+          style={{
+            background: "#39ff8814",
+            border: "1px solid #39ff8855",
+            color: "#39ff88",
+            borderRadius: 7,
+            padding: "5px 10px",
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: loading ? "default" : "pointer",
+            fontFamily: "monospace",
+            transition: "background 0.15s",
+          }}
+          onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#39ff8828")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#39ff8814")}
         >
-          {loading ? "Scanning..." : "Scan"}
+          {loading ? "Scanning…" : "Scan"}
         </button>
       </div>
-      <div>Files scanned: {analysis.length}</div>
-      <div>Avg complexity: {avgComplexity}</div>
-      <div style={{ color: totalSecurityIssues > 0 ? "#ff6b35" : "#39ff88" }}>
-        Security issues: {totalSecurityIssues}
+
+      <div style={{ background: "#00000022", borderRadius: 8, padding: "8px 10px", marginBottom: 12 }}>
+        <StatRow label="Files scanned" value={analysis.length} />
+        <StatRow label="Avg complexity" value={avgComplexity} />
+        <StatRow
+          label="Security issues"
+          value={totalSecurityIssues}
+          valueColor={totalSecurityIssues > 0 ? "#ff6b35" : "#39ff88"}
+        />
       </div>
-      <hr style={{ border: "none", borderTop: "1px solid #ffffff22", margin: "12px 0" }} />
+
+      <div style={{ height: 1, background: "linear-gradient(90deg, transparent, #ffffff22, transparent)", margin: "12px 0" }} />
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ color: "#ffd23f" }}>Deploy</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#ffd23f", boxShadow: "0 0 8px #ffd23f" }} />
+          <strong style={{ color: "#ffd23f", fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            Deploy
+          </strong>
+        </div>
         <button
           onClick={deploy}
           disabled={deploying}
-          style={{ background: "#ffd23f", border: "none", color: "#05060a", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 700 }}
+          style={{
+            background: "linear-gradient(135deg, #ffd23f, #ffb020)",
+            border: "none",
+            color: "#0a0d14",
+            borderRadius: 7,
+            padding: "6px 12px",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: deploying ? "default" : "pointer",
+            fontFamily: "monospace",
+            boxShadow: deploying ? "none" : "0 2px 8px #ffd23f33",
+            opacity: deploying ? 0.7 : 1,
+          }}
         >
-          {deploying ? "Deploying..." : "🚀 Deploy"}
+          {deploying ? "Deploying…" : "🚀 Deploy"}
         </button>
       </div>
+
       {shownDeployment && (
-        <div style={{ marginTop: 6, color: shownDeployment.status === "live" ? "#39ff88" : shownDeployment.status === "failed" ? "#ff6b35" : "#ffd23f" }}>
-          {shownDeployment.status} {shownDeployment.url ? `→ ${shownDeployment.url}` : ""}
+        <div
+          style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#00000022",
+            border: `1px solid ${deployColor}33`,
+          }}
+        >
+          <div style={{ color: deployColor, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: deployColor }} />
+            {shownDeployment.status}
+            {shownDeployment.url ? ` → ${shownDeployment.url}` : ""}
+          </div>
           {shownDeployment.log && (
-            <div style={{ color: "#888", marginTop: 4, fontSize: 11 }}>{shownDeployment.log}</div>
+            <div style={{ color: "#8fd9ec80", marginTop: 4, fontSize: 10.5, lineHeight: 1.4 }}>{shownDeployment.log}</div>
           )}
         </div>
       )}
