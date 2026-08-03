@@ -19,8 +19,39 @@ export function useNexusProject(projectId) {
   const wsRef = useRef(null);
 
   useEffect(() => {
+    // Reset all per-project state immediately when switching projects.
+    // Previously this only happened implicitly (or not at all) — the
+    // WebSocket reconnected correctly, but agentActivity/taskStatuses/
+    // deploymentStatus/sandboxResults kept whatever was left over from
+    // the PREVIOUS project, since React reuses this same hook instance
+    // across a projectId prop change rather than remounting it. That's
+    // exactly why switching projects showed stale code from whichever
+    // project was open before.
+    setAgentActivity([]);
+    setTaskStatuses({});
+    setDeploymentStatus(null);
+    setSandboxResults([]);
+    setFiles({});
+
     if (!projectId) return;
+
+    // Load the project's ACTUAL saved files immediately on open — this
+    // was completely missing before. The editor previously only ever
+    // showed live WebSocket stream messages from the current session,
+    // so opening an existing project with real code already generated
+    // in a past session showed nothing at all until a brand-new
+    // command happened to stream something.
     const token = localStorage.getItem("nexus_token");
+    fetch(`${API_BASE}/api/projects/${projectId}/files`, {
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const byPath = Object.fromEntries((Array.isArray(data) ? data : []).map((f) => [f.path, f]));
+        setFiles(byPath);
+      })
+      .catch(() => setFiles({}));
+
     const ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}?token=${encodeURIComponent(token || "")}`);
     wsRef.current = ws;
     ws.onmessage = (event) => {
