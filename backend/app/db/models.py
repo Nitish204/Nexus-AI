@@ -11,15 +11,35 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, DateTime
 
 
 def now() -> datetime:
-    return datetime.utcnow()
+    # IMPORTANT: datetime.utcnow() (the previous implementation here)
+    # returns UTC time but strips the timezone marker entirely — the
+    # resulting value is indistinguishable from local time once
+    # serialized to JSON. Browsers then parse it as if it WERE already
+    # local time, silently shifting every displayed timestamp by
+    # exactly the user's UTC offset (e.g. +5:30 for India) — this was
+    # the root cause of timestamps looking hours off in the sidebar.
+    # now(timezone.utc) is timezone-AWARE and serializes with an
+    # explicit UTC marker, which JS correctly converts to local time.
+    return datetime.now(timezone.utc)
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+def utc_datetime_field(**kwargs):
+    """Shared Field() for created_at/updated_at columns. Explicitly
+    configures the underlying SQL column as TIMESTAMPTZ (timezone-aware)
+    rather than SQLAlchemy's default TIMESTAMP WITHOUT TIME ZONE — the
+    latter silently strips timezone info on every save/read, which
+    would reintroduce the same bug now() alone was fixed for, just one
+    layer deeper (at the database column level instead of the Python
+    function level)."""
+    return Field(default_factory=now, sa_column=Column(DateTime(timezone=True)), **kwargs)
 
 
 class AgentRole(str, enum.Enum):
@@ -52,7 +72,7 @@ class User(SQLModel, table=True):
     password_hash: str | None = None  # null for OAuth-only users
     provider: AuthProvider = AuthProvider.LOCAL
     avatar_url: str = ""
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
 
 
 class Project(SQLModel, table=True):
@@ -66,8 +86,8 @@ class Project(SQLModel, table=True):
     name_is_default: bool = True
     description: str = ""
     owner_id: str = Field(index=True)
-    created_at: datetime = Field(default_factory=now)
-    updated_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
+    updated_at: datetime = utc_datetime_field()
 
     tasks: list["Task"] = Relationship(back_populates="project")
     files: list["GeneratedFile"] = Relationship(back_populates="project")
@@ -84,8 +104,8 @@ class Task(SQLModel, table=True):
     status: TaskStatus = TaskStatus.PENDING
     depends_on: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     result_summary: str = ""
-    created_at: datetime = Field(default_factory=now)
-    updated_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
+    updated_at: datetime = utc_datetime_field()
 
     project: Project = Relationship(back_populates="tasks")
     messages: list["AgentMessage"] = Relationship(back_populates="task")
@@ -99,7 +119,7 @@ class AgentMessage(SQLModel, table=True):
     role: AgentRole
     content: str
     message_type: str = "reasoning"  # reasoning | code | tool_call | error | status
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
 
     task: Task = Relationship(back_populates="messages")
 
@@ -115,8 +135,8 @@ class GeneratedFile(SQLModel, table=True):
     language: str = "python"
     written_by: AgentRole
     version: int = 1
-    created_at: datetime = Field(default_factory=now)
-    updated_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
+    updated_at: datetime = utc_datetime_field()
 
     project: Project = Relationship(back_populates="files")
 
@@ -131,7 +151,7 @@ class GraphEdge(SQLModel, table=True):
     source: str
     target: str
     relation: str  # imports | defines_api | reads_table | writes_table | calls
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
 
 
 class AnalysisResult(SQLModel, table=True):
@@ -144,7 +164,7 @@ class AnalysisResult(SQLModel, table=True):
     security_issues: int = 0
     lint_issues: int = 0
     raw_report: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
 
 
 class Deployment(SQLModel, table=True):
@@ -154,4 +174,4 @@ class Deployment(SQLModel, table=True):
     status: str = "pending"  # pending | building | live | failed
     url: str = ""
     log: str = ""
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = utc_datetime_field()
