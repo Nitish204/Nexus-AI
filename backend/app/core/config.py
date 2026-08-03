@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Developer tier (much higher TPM), this can be raised significantly.
     groq_api_key: str = ""
     agent_model: str = "openai/gpt-oss-120b"
-    max_tokens_per_agent_call: int = 3000
+    max_tokens_per_agent_call: int = 2000
 
     # Sandbox
     docker_image_python: str = "python:3.12-slim"
