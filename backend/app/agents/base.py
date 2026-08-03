@@ -16,7 +16,7 @@ import abc
 import asyncio
 import logging
 
-from openai import AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI, APIStatusError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
@@ -139,29 +139,49 @@ class AgentBase(abc.ABC):
                 logger.info("[%s] task=%s completed successfully", self.role.value, task.id)
                 break  # success — leave the retry loop
 
-            except RateLimitError as exc:
-                # Groq's free tier is capped at a fairly low tokens-per-
-                # minute budget shared across every agent call in a run
-                # — this is the single most common failure mode when
-                # multiple agents run back-to-back. One retry after a
-                # cooldown recovers cleanly from most transient hits;
-                # if it still fails, the message tells the person
-                # exactly why, instead of a generic "Error: ...".
-                logger.warning("[%s] task=%s hit Groq rate limit (attempt %d): %s", self.role.value, task.id, attempt + 1, exc)
-                if attempt < max_rate_limit_retries:
-                    await self._log(task, "Hit Groq's free-tier rate limit — waiting 25s and retrying once...", "status")
-                    await asyncio.sleep(25)
-                    continue
-                logger.error("[%s] task=%s FAILED: rate limit persisted after retry", self.role.value, task.id)
-                task.status = TaskStatus.FAILED
-                await self._log(
-                    task,
-                    "Failed: Groq's free-tier rate limit (tokens-per-minute) was exceeded and persisted "
-                    "after one retry. This usually means multiple agents ran in the same request and "
-                    "collectively exceeded the per-minute budget. Try a smaller/more specific request, "
-                    "space out commands, or upgrade your Groq plan for a higher TPM limit.",
-                    "error",
-                )
+            except APIStatusError as exc:
+                # Groq returns TWO different status codes for what is
+                # functionally the same condition — a shared per-minute
+                # token budget (8,000 on the free tier) being exceeded:
+                #   429 Too Many Requests — budget already used up by
+                #       prior calls this minute (handled by the openai
+                #       SDK's own built-in retry already, usually)
+                #   413 Payload Too Large — THIS single request's own
+                #       size (prompt + max_tokens) already exceeds the
+                #       per-minute cap outright, rejected immediately
+                #       with zero retries from the SDK
+                # Previously only 429 (via the narrower RateLimitError)
+                # was caught here — a 413 fell through to the generic
+                # handler below and failed instantly with no retry,
+                # which is exactly what happened on this PM task.
+                if exc.status_code in (429, 413):
+                    logger.warning(
+                        "[%s] task=%s hit Groq rate limit, status=%d (attempt %d): %s",
+                        self.role.value, task.id, exc.status_code, attempt + 1, exc,
+                    )
+                    if attempt < max_rate_limit_retries:
+                        await self._log(task, "Hit Groq's free-tier rate limit — waiting 25s and retrying once...", "status")
+                        await asyncio.sleep(25)
+                        continue
+                    logger.error("[%s] task=%s FAILED: rate limit persisted after retry", self.role.value, task.id)
+                    task.status = TaskStatus.FAILED
+                    await self._log(
+                        task,
+                        "Failed: Groq's free-tier rate limit (tokens-per-minute) was exceeded and persisted "
+                        "after one retry. This usually means multiple agents ran in the same request and "
+                        "collectively exceeded the per-minute budget, or this single request's own prompt "
+                        "was already too large. Try a smaller/more specific request, space out commands, "
+                        "or upgrade your Groq plan for a higher TPM limit.",
+                        "error",
+                    )
+                else:
+                    # Some other API status error (auth, bad request,
+                    # server error, etc.) — not rate-limit-shaped, so no
+                    # retry; fails the same way the generic handler
+                    # below always has.
+                    logger.error("[%s] task=%s FAILED: %s", self.role.value, task.id, exc, exc_info=True)
+                    task.status = TaskStatus.FAILED
+                    await self._log(task, f"Error: {exc}", "error")
                 break
 
             except Exception as exc:  # noqa: BLE001
