@@ -16,7 +16,7 @@ const AGENT_LAYOUT = [
 ];
 
 export default function Workspace({ projectId }) {
-  const { agentActivity, taskStatuses, deploymentStatus, sendCommand } = useNexusProject(projectId);
+  const { agentActivity, taskStatuses, deploymentStatus, files, sendCommand } = useNexusProject(projectId);
   const [command, setCommand] = useState("");
   const [activeCode, setActiveCode] = useState("# Generated code will stream in here...");
 
@@ -130,15 +130,26 @@ export default function Workspace({ projectId }) {
   );
 
   const latestCodeStream = [...agentActivity].reverse().find((a) => a.message_type === "code");
-  if (latestCodeStream && latestCodeStream.content !== activeCode) {
-    // cheap live-update; a production version would diff/stream token-by-token
-  }
+
+  // When there's no live stream chunk active (e.g. just opened an
+  // existing project, nothing currently generating), fall back to the
+  // most recently updated REAL saved file for this project — this is
+  // what was missing entirely before; the editor only ever showed
+  // ephemeral WebSocket messages, never the project's actual code.
+  const fileList = Object.values(files);
+  const mostRecentFile = fileList.length
+    ? [...fileList].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))[0]
+    : null;
+
+  const displayedCode =
+    latestCodeStream?.content ?? mostRecentFile?.content ?? activeCode;
+  const displayedLanguage = mostRecentFile?.language ?? "python";
 
   return (
     <div
       style={{
         position: "relative",
-        width: "100vw",
+        width: "100%",
         height: "100dvh",
         background: "#05060a",
         overflow: "hidden",
@@ -185,8 +196,8 @@ export default function Workspace({ projectId }) {
           <Editor
             height="100%"
             theme="vs-dark"
-            defaultLanguage="python"
-            value={latestCodeStream?.content ?? activeCode}
+            language={displayedLanguage}
+            value={displayedCode}
             options={{ readOnly: true, fontSize: 11, minimap: { enabled: false } }}
           />
         </div>
