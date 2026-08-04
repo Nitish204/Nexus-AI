@@ -1,6 +1,0 @@
-# Cloudflare Pages config. Only needed if you deploy via the `wrangler`
-# CLI instead of the Git-connected dashboard flow (either works — the
-# dashboard flow doesn't require this file at all).
-name = "nexus-frontend"
-pages_build_output_dir = "dist"
-compatibility_date = "2025-01-01"
