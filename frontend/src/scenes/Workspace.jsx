@@ -255,7 +255,7 @@ export default function Workspace({ projectId }) {
             animation: mounted ? "nexusPanelIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.05s both" : "none",
           }}
         >
-          <AnalyticsPanel projectId={projectId} deploymentStatus={deploymentStatus} />
+          <AnalyticsPanel projectId={projectId} deploymentStatus={deploymentStatus} files={fileList} />
         </div>
 
         {/* Code editor — floats top-right over the canvas only, shrinks on mobile */}
