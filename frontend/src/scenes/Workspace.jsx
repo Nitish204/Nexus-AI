@@ -32,11 +32,38 @@ const ROLE_COLOR = {
   devops_engineer: "#fb7185",
 };
 
+// Infra artifacts (Dockerfile, compose, CI config) and test files are
+// real outputs, but they aren't "the app" — a request like "build a
+// to-do list in python" should land the editor on the to-do list code,
+// not whatever DevOps or QA happened to finish last. These are only
+// ever de-prioritized for the DEFAULT view; they're still selectable
+// via the file tabs below.
+function isSecondaryFile(path) {
+  const p = path.toLowerCase();
+  return (
+    p.startsWith("tests/") ||
+    p.includes("/tests/") ||
+    p.startsWith("test_") ||
+    p.endsWith(".dockerfile") ||
+    p === "dockerfile" ||
+    p.includes("docker-compose") ||
+    p.includes(".github/workflows") ||
+    p.endsWith(".yml") ||
+    p.endsWith(".yaml")
+  );
+}
+
+// Only the roles that write the actual requested product code — DevOps
+// and QA output is real but shouldn't silently take over the main
+// editor while a build is in progress.
+const PRIMARY_CODE_ROLES = new Set(["backend_engineer", "frontend_engineer"]);
+
 export default function Workspace({ projectId }) {
   const { agentActivity, taskStatuses, deploymentStatus, files, sendCommand } = useNexusProject(projectId);
   const [command, setCommand] = useState("");
   const [activeCode, setActiveCode] = useState("# Generated code will stream in here...");
   const [mounted, setMounted] = useState(false);
+  const [selectedPath, setSelectedPath] = useState(null); // manual file tab override
 
   const AGENT_LAYOUT = useMemo(buildLayout, []);
 
@@ -44,6 +71,12 @@ export default function Workspace({ projectId }) {
     const id = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // Forget the manually-picked file tab when switching projects — it
+  // belonged to the previous project's file list, not this one's.
+  useEffect(() => {
+    setSelectedPath(null);
+  }, [projectId]);
 
   // Voice greeting on load
   useEffect(() => {
@@ -128,12 +161,25 @@ export default function Workspace({ projectId }) {
   );
   const busy = activeRoles.size > 0;
 
-  const latestCodeStream = [...agentActivity].reverse().find((a) => a.message_type === "code");
-
   const fileList = Object.values(files);
-  const mostRecentFile = fileList.length
-    ? [...fileList].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))[0]
-    : null;
+  const sortedFiles = [...fileList].sort(
+    (a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
+  );
+
+  // Default file: most recently updated PRODUCT file (skip Dockerfiles,
+  // CI config, and tests) — falling back to any file at all only if
+  // that's genuinely everything the project has.
+  const primaryFile = sortedFiles.find((f) => !isSecondaryFile(f.path)) ?? sortedFiles[0] ?? null;
+  const selectedFile = selectedPath ? files[selectedPath] : null;
+  const mostRecentFile = selectedFile ?? primaryFile;
+
+  // Only let a live-streaming "code" message pre-empt the saved file
+  // view if it's from a product agent (Backend/Frontend) — a DevOps or
+  // QA stream chunk finishing later should never hijack the editor away
+  // from the code the person actually asked for.
+  const latestCodeStream = selectedPath
+    ? null
+    : [...agentActivity].reverse().find((a) => a.message_type === "code" && PRIMARY_CODE_ROLES.has(a.role));
 
   const displayedCode = latestCodeStream?.content ?? mostRecentFile?.content ?? activeCode;
   const displayedLanguage = mostRecentFile?.language ?? "python";
@@ -219,25 +265,70 @@ export default function Workspace({ projectId }) {
             top: 12,
             right: 12,
             zIndex: 2,
-            width: "min(380px, 44vw)",
-            height: "min(260px, 32vh)",
-            minWidth: 160,
+            width: "min(420px, 46vw)",
+            height: "min(300px, 36vh)",
+            minWidth: 180,
             borderRadius: 14,
             overflow: "hidden",
             border: "1px solid #38bdf855",
+            display: "flex",
+            flexDirection: "column",
+            background: "#0a0620",
             opacity: mounted ? 1 : 0,
             animation: mounted
               ? "nexusPanelIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.15s both, nexusGlowPulse 6s ease-in-out infinite"
               : "none",
           }}
         >
-          <Editor
-            height="100%"
-            theme="vs-dark"
-            language={displayedLanguage}
-            value={displayedCode}
-            options={{ readOnly: true, fontSize: 11, minimap: { enabled: false } }}
-          />
+          {sortedFiles.length > 1 && (
+            <div
+              style={{
+                display: "flex",
+                gap: 2,
+                padding: "6px 6px 0",
+                overflowX: "auto",
+                flexShrink: 0,
+                borderBottom: "1px solid #ffffff12",
+              }}
+            >
+              {sortedFiles.map((f) => {
+                const isShown = f.path === (mostRecentFile?.path ?? primaryFile?.path);
+                return (
+                  <button
+                    key={f.path}
+                    onClick={() => setSelectedPath(f.path)}
+                    title={f.path}
+                    style={{
+                      flexShrink: 0,
+                      padding: "5px 10px",
+                      fontSize: 10.5,
+                      fontFamily: "'Space Grotesk', monospace",
+                      fontWeight: isShown ? 700 : 500,
+                      color: isShown ? "#7dd3fc" : "#a5b4fc88",
+                      background: isShown ? "#38bdf81f" : "transparent",
+                      border: "none",
+                      borderRadius: "8px 8px 0 0",
+                      borderBottom: isShown ? "2px solid #38bdf8" : "2px solid transparent",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      opacity: isSecondaryFile(f.path) ? 0.65 : 1,
+                    }}
+                  >
+                    {f.path.split("/").pop()}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <Editor
+              height="100%"
+              theme="vs-dark"
+              language={displayedLanguage}
+              value={displayedCode}
+              options={{ readOnly: true, fontSize: 11, minimap: { enabled: false } }}
+            />
+          </div>
         </div>
       </div>
 
