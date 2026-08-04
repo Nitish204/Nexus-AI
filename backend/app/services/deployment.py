@@ -103,7 +103,9 @@ class RenderProvider(DeployProvider):
 class LocalDockerProvider(DeployProvider):
     """Fallback provider — builds the image locally and reports how to
     run it. Useful for the demo path and for anyone without cloud
-    credentials configured yet."""
+    credentials configured yet. This does NOT expose a public URL: it
+    builds an image on the same machine running the NEXUS backend and
+    hands back the `docker run` command to start it yourself."""
 
     def __init__(self, api_key: str = ""):
         # Not used locally, but accepted so both providers share the
@@ -111,16 +113,53 @@ class LocalDockerProvider(DeployProvider):
         self.api_key = api_key
 
     async def deploy(self, project_root: Path, deployment: Deployment) -> Deployment:
-        import docker as docker_sdk
+        dockerfile = project_root / "Dockerfile"
+        if not dockerfile.exists():
+            # Same check RenderProvider does, applied here too — without
+            # it, `docker.images.build` fails with an opaque low-level
+            # error ("Dockerfile not found") instead of telling the
+            # person the actual fix: ask for deployment/hosting/Docker
+            # explicitly so the DevOps agent's task actually runs and
+            # produces one.
+            deployment.status = "failed"
+            deployment.log = (
+                "No Dockerfile found in this project. The DevOps agent only runs "
+                "when a request explicitly mentions deployment, hosting, containers, "
+                "or CI/CD — ask for that (e.g. \"containerize this and add a Dockerfile\") "
+                "before pressing Deploy."
+            )
+            return deployment
 
         try:
-            client = docker_sdk.from_env()
+            import docker as docker_sdk
+            from docker.errors import DockerException
+
+            try:
+                client = docker_sdk.from_env()
+                client.ping()
+            except DockerException as exc:
+                # The far more common failure than a build error: no
+                # Docker daemon reachable on the machine running the
+                # backend at all (nothing installed, or the daemon isn't
+                # running). Previously this fell through to the generic
+                # except below with a raw SDK traceback string.
+                deployment.status = "failed"
+                deployment.log = (
+                    "Couldn't reach a Docker daemon on the server running NEXUS "
+                    f"({exc}). Install/start Docker there, or set DEPLOY_PROVIDER=render "
+                    "with a RENDER_API_KEY in .env to deploy to a real hosted URL instead."
+                )
+                return deployment
+
             image, build_logs = client.images.build(
                 path=str(project_root), tag=f"nexus-{deployment.project_id[:8]}:latest", rm=True
             )
             deployment.status = "live"
             deployment.url = f"local://docker run -p 8080:8000 nexus-{deployment.project_id[:8]}:latest"
-            deployment.log = "Image built locally. Run the command in `url` to start it."
+            deployment.log = (
+                "Image built locally on the NEXUS server — this is not a public URL. "
+                "Run the command shown above on that machine to start the container."
+            )
         except Exception as exc:  # noqa: BLE001
             deployment.status = "failed"
             deployment.log = f"Local build error: {exc}"
