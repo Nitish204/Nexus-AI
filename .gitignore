@@ -1,0 +1,27 @@
+# Real environment files hold actual secrets (API keys, DB URLs, etc.)
+# and must never be committed. .env.example files are safe and SHOULD
+# be committed — they're just placeholder templates, not excluded here.
+.env
+.env.local
+.env.*.local
+frontend/.env
+backend/.env
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/.vite/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/__pycache__/
+
+# OS/editor noise
+.DS_Store
+.vscode/
