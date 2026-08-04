@@ -16,11 +16,13 @@ function StatRow({ label, value, valueColor }) {
   );
 }
 
-export default function AnalyticsPanel({ projectId, deploymentStatus }) {
+export default function AnalyticsPanel({ projectId, deploymentStatus, files = [] }) {
   const [analysis, setAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [latestDeployment, setLatestDeployment] = useState(null);
+
+  const hasDockerfile = files.some((f) => f.path.toLowerCase() === "dockerfile" || f.path.toLowerCase().endsWith("/dockerfile"));
 
   const runAnalysis = useCallback(async () => {
     setLoading(true);
@@ -137,23 +139,34 @@ export default function AnalyticsPanel({ projectId, deploymentStatus }) {
         </div>
         <button
           onClick={deploy}
-          disabled={deploying}
+          disabled={deploying || !hasDockerfile}
+          title={
+            !hasDockerfile
+              ? "No Dockerfile yet — ask NEXUS to \"containerize and deploy this\" first so the DevOps agent creates one."
+              : "Builds this project's Dockerfile and runs it on the NEXUS server (or deploys to Render if that's configured in .env)."
+          }
           style={{
-            background: "linear-gradient(135deg, #ffd23f, #ffb020)",
+            background: hasDockerfile ? "linear-gradient(135deg, #ffd23f, #ffb020)" : "#ffffff14",
             border: "none",
-            color: "#0a0d14",
+            color: hasDockerfile ? "#0a0d14" : "#ffffff55",
             borderRadius: 7,
             padding: "6px 12px",
             fontSize: 11,
             fontWeight: 700,
-            cursor: deploying ? "default" : "pointer",
+            cursor: deploying || !hasDockerfile ? "default" : "pointer",
             fontFamily: "monospace",
-            boxShadow: deploying ? "none" : "0 2px 8px #ffd23f33",
+            boxShadow: deploying || !hasDockerfile ? "none" : "0 2px 8px #ffd23f33",
             opacity: deploying ? 0.7 : 1,
           }}
         >
           {deploying ? "Deploying…" : "🚀 Deploy"}
         </button>
+      </div>
+
+      <div style={{ color: "#8fd9ec70", fontSize: 10, marginTop: 6, lineHeight: 1.4 }}>
+        {hasDockerfile
+          ? "Builds & runs the project's Dockerfile on the NEXUS server (local:// url), or deploys to Render for a public link if DEPLOY_PROVIDER=render is set."
+          : "No Dockerfile in this project yet — Deploy has nothing to build until you explicitly ask for deployment/Docker."}
       </div>
 
       {shownDeployment && (
