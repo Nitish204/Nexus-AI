@@ -1,35 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stars, Sparkles } from "@react-three/drei";
 import Editor from "@monaco-editor/react";
-import AgentNode, { CoreNode, ConnectionBeam } from "./AgentNode";
 import { useNexusProject } from "../hooks/useNexusProject";
 import { useVoiceCommand } from "../hooks/useVoiceCommand";
 import AnalyticsPanel from "../components/AnalyticsPanel";
 
-// Agents arranged in a pentagon constellation around the shared core,
-// rather than scattered ad hoc — the layout itself now communicates that
-// every specialist reports to, and draws from, the same intelligence.
-const CORE_POSITION = [0, 0.3, -2];
-const ORBIT_RADIUS = 3.4;
+// "Orbital Core" theme — monochrome graphite stage, agents drift in a slow
+// constant orbit around the shared core rather than sitting static. Warm
+// (amber/coral) roles are the human-facing specialists; cool (teal/blue)
+// roles are the systems specialists. The core itself stays monochrome so
+// the two temperatures read as satellites orbiting a neutral intelligence.
 const AGENT_ROLES = ["product_manager", "frontend_engineer", "devops_engineer", "qa_engineer", "backend_engineer"];
+const ORBIT_PERIOD_S = 46; // one full slow revolution
 
 function buildLayout() {
-  return AGENT_ROLES.map((role, i) => {
-    const angle = (i / AGENT_ROLES.length) * Math.PI * 2 - Math.PI / 2;
-    const x = CORE_POSITION[0] + Math.cos(angle) * ORBIT_RADIUS;
-    const y = CORE_POSITION[1] + Math.sin(angle) * ORBIT_RADIUS * 0.62;
-    const z = CORE_POSITION[2] - 0.4;
-    return { role, position: [x, y, z] };
-  });
+  return AGENT_ROLES.map((role, i) => ({
+    role,
+    angle: (i / AGENT_ROLES.length) * 360,
+  }));
 }
 
-const ROLE_COLOR = {
-  product_manager: "#ffb454",
-  backend_engineer: "#22d3ee",
-  frontend_engineer: "#c084fc",
-  qa_engineer: "#34d399",
-  devops_engineer: "#fb7185",
+const ROLE_STYLE = {
+  product_manager: { color: "#ffb454", glow: "#ffb45488", label: "Product" },
+  frontend_engineer: { color: "#ff8a65", glow: "#ff8a6588", label: "Frontend" },
+  qa_engineer: { color: "#ffcc80", glow: "#ffcc8088", label: "QA" },
+  backend_engineer: { color: "#4dd0e1", glow: "#4dd0e188", label: "Backend" },
+  devops_engineer: { color: "#42a5f5", glow: "#42a5f588", label: "DevOps" },
 };
 
 // Infra artifacts (Dockerfile, compose, CI config) and test files are
@@ -193,7 +188,7 @@ export default function Workspace({ projectId }) {
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        background: "linear-gradient(160deg, #0a0620 0%, #150a35 38%, #0d1442 70%, #06081f 100%)",
+        background: "radial-gradient(circle at 50% 40%, #111111 0%, #0a0a0a 55%, #050505 100%)",
         fontFamily: "'Space Grotesk', 'Segoe UI', sans-serif",
       }}
     >
@@ -207,41 +202,153 @@ export default function Workspace({ projectId }) {
           100% { opacity: 1; transform: translateY(0); }
         }
         @keyframes nexusGlowPulse {
-          0%, 100% { box-shadow: 0 0 24px #7c3aed33; }
-          50% { box-shadow: 0 0 36px #38bdf844; }
+          0%, 100% { box-shadow: 0 0 24px #ffffff11; }
+          50% { box-shadow: 0 0 36px #4dd0e122; }
         }
-        .nexus-build-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px #38bdf866; }
+        @keyframes nexusOrbitSpin {
+          0% { transform: translate(-50%, -50%) rotate(0deg); }
+          100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        @keyframes nexusOrbitSpinReverse {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(-360deg); }
+        }
+        @keyframes nexusCorePulse {
+          0%, 100% { box-shadow: 0 0 0 0 #ffffff22, 0 0 18px 2px #ffffff1a; transform: translate(-50%, -50%) scale(1); }
+          50% { box-shadow: 0 0 0 10px #ffffff00, 0 0 28px 6px #ffffff2a; transform: translate(-50%, -50%) scale(1.05); }
+        }
+        @keyframes nexusMicBreathe {
+          0%, 100% { box-shadow: 0 0 0 0 #ffffff1a; }
+          50% { box-shadow: 0 0 0 6px #ffffff00; }
+        }
+        .nexus-build-btn { background: #161616; border: 1px solid #2a2a2a; color: #d8d8d8; }
+        .nexus-build-btn:hover {
+          background: linear-gradient(135deg, #ffb454, #4dd0e1);
+          color: #0a0a0a;
+          border-color: transparent;
+          transform: translateY(-1px);
+          box-shadow: 0 6px 22px #00000055;
+        }
         .nexus-build-btn:active { transform: translateY(0); }
-        .nexus-mic-btn:hover { filter: brightness(1.15); }
+        .nexus-mic-btn:hover { filter: brightness(1.2); }
+        .nexus-agent-node { transition: filter 0.3s ease, transform 0.3s ease; }
+        .nexus-agent-node.active { filter: brightness(1.4); transform: scale(1.12); }
         @media (prefers-reduced-motion: reduce) {
           * { animation: none !important; transition: none !important; }
         }
       `}</style>
 
-      {/* 3D constellation + floating panels — fills all space above the command bar */}
+      {/* Orbital core graph + floating panels — fills all space above the command bar */}
       <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-        <Canvas camera={{ position: [0, 0.6, 9], fov: 50 }}>
-          <ambientLight intensity={0.5} />
-          <pointLight position={[6, 6, 6]} intensity={1.4} color="#38bdf8" />
-          <pointLight position={[-6, -4, 4]} intensity={1} color="#c084fc" />
-          <pointLight position={[0, -5, -4]} intensity={0.6} color="#fb7185" />
-          <Stars radius={70} depth={45} count={2200} factor={2.6} fade speed={0.4} />
-          <Sparkles count={50} scale={12} size={2.4} speed={0.35} color="#a5b4fc" opacity={0.5} />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage:
+              "linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px)",
+            backgroundSize: "34px 34px",
+            maskImage: "radial-gradient(circle at 50% 55%, black 0%, transparent 72%)",
+            WebkitMaskImage: "radial-gradient(circle at 50% 55%, black 0%, transparent 72%)",
+          }}
+        />
 
-          <CoreNode busy={busy} />
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "56%",
+            width: "min(78vw, 380px)",
+            height: "min(78vw, 380px)",
+            transform: "translate(-50%, -50%)",
+          }}
+        >
+          {/* Slowly, continuously orbiting ring of agent nodes */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "100%",
+              height: "100%",
+              animation: `nexusOrbitSpin ${ORBIT_PERIOD_S}s linear infinite`,
+            }}
+          >
+            {AGENT_LAYOUT.map((a) => {
+              const style = ROLE_STYLE[a.role];
+              const active = activeRoles.has(a.role);
+              return (
+                <div
+                  key={a.role}
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    top: "50%",
+                    width: 0,
+                    height: 0,
+                    transform: `rotate(${a.angle}deg) translateX(min(35vw, 170px))`,
+                  }}
+                >
+                  {/* counter-rotate so the node + label stay upright as the ring spins */}
+                  <div
+                    style={{
+                      animation: `nexusOrbitSpinReverse ${ORBIT_PERIOD_S}s linear infinite`,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <div
+                      className={`nexus-agent-node${active ? " active" : ""}`}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: "50%",
+                        background: style.color,
+                        boxShadow: active ? `0 0 22px 4px ${style.glow}` : `0 0 10px 1px ${style.glow}`,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        color: active ? style.color : "#8a8a8a",
+                        letterSpacing: "0.03em",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {style.label}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-          {AGENT_LAYOUT.map((a) => {
-            const active = activeRoles.has(a.role);
-            return (
-              <group key={a.role}>
-                <ConnectionBeam from={CORE_POSITION} to={a.position} color={ROLE_COLOR[a.role]} active={active} />
-                <AgentNode role={a.role} position={a.position} active={active} />
-              </group>
-            );
-          })}
+          {/* Static connector lines from core to each orbit radius (visual field, not per-node tracking) */}
+          <svg
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+            viewBox="0 0 100 100"
+          >
+            <circle cx="50" cy="50" r="34" fill="none" stroke="#ffffff14" strokeWidth="0.4" />
+          </svg>
 
-          <OrbitControls enablePan={false} minDistance={5} maxDistance={16} autoRotate autoRotateSpeed={0.35} />
-        </Canvas>
+          {/* Monochrome core, pulsing gently on its own — brighter while any agent is busy */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: 46,
+              height: 46,
+              borderRadius: "50%",
+              background: busy
+                ? "radial-gradient(circle at 35% 30%, #ffffff, #cfcfcf 70%)"
+                : "radial-gradient(circle at 35% 30%, #e8e8e8, #9a9a9a 70%)",
+              animation: `nexusCorePulse ${busy ? 1.6 : 3.4}s ease-in-out infinite`,
+            }}
+          />
+        </div>
 
         {/* Analytics panel — floats top-left over the canvas only */}
         <div
@@ -270,10 +377,10 @@ export default function Workspace({ projectId }) {
             minWidth: 180,
             borderRadius: 14,
             overflow: "hidden",
-            border: "1px solid #38bdf855",
+            border: "1px solid #ffffff22",
             display: "flex",
             flexDirection: "column",
-            background: "#0a0620",
+            background: "#0a0a0a",
             opacity: mounted ? 1 : 0,
             animation: mounted
               ? "nexusPanelIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.15s both, nexusGlowPulse 6s ease-in-out infinite"
@@ -304,11 +411,11 @@ export default function Workspace({ projectId }) {
                       fontSize: 10.5,
                       fontFamily: "'Space Grotesk', monospace",
                       fontWeight: isShown ? 700 : 500,
-                      color: isShown ? "#7dd3fc" : "#a5b4fc88",
-                      background: isShown ? "#38bdf81f" : "transparent",
+                      color: isShown ? "#4dd0e1" : "#8a8a8a",
+                      background: isShown ? "#4dd0e11f" : "transparent",
                       border: "none",
                       borderRadius: "8px 8px 0 0",
-                      borderBottom: isShown ? "2px solid #38bdf8" : "2px solid transparent",
+                      borderBottom: isShown ? "2px solid #4dd0e1" : "2px solid transparent",
                       cursor: "pointer",
                       whiteSpace: "nowrap",
                       opacity: isSecondaryFile(f.path) ? 0.65 : 1,
@@ -346,10 +453,10 @@ export default function Workspace({ projectId }) {
           gap: 8,
           padding: "10px 12px",
           paddingBottom: "max(10px, env(safe-area-inset-bottom))",
-          background: "rgba(10, 8, 28, 0.85)",
+          background: "rgba(10, 10, 10, 0.85)",
           backdropFilter: "blur(14px)",
           WebkitBackdropFilter: "blur(14px)",
-          borderTop: "1px solid #7c3aed44",
+          borderTop: "1px solid #ffffff1a",
           opacity: mounted ? 1 : 0,
           animation: mounted ? "nexusBarIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.2s both" : "none",
         }}
@@ -363,9 +470,9 @@ export default function Workspace({ projectId }) {
             minWidth: 0,
             padding: "12px 14px",
             borderRadius: 10,
-            border: "1px solid #7c3aed66",
-            background: "#150a3599",
-            color: "#e9e4ff",
+            border: "1px solid #ffffff2a",
+            background: "#141414",
+            color: "#e8e8e8",
             fontFamily: "inherit",
             fontSize: 14,
             outline: "none",
@@ -379,14 +486,17 @@ export default function Workspace({ projectId }) {
             className="nexus-mic-btn"
             style={{
               flexShrink: 0,
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: `1px solid ${listening ? "#fb7185" : "#38bdf866"}`,
-              background: listening ? "#fb718522" : "#150a3599",
-              color: listening ? "#fb7185" : "#38bdf8",
+              width: 46,
+              padding: 0,
+              borderRadius: "50%",
+              border: `1px solid ${listening ? "#ff8a65" : "#ffffff33"}`,
+              background: listening ? "#ff8a65" : "#141414",
+              color: listening ? "#0a0a0a" : "#c8c8c8",
               cursor: "pointer",
               fontWeight: 700,
-              transition: "filter 0.2s ease",
+              fontSize: 16,
+              transition: "filter 0.2s ease, background 0.2s ease, border-color 0.2s ease",
+              animation: listening ? "none" : "nexusMicBreathe 2.6s ease-in-out infinite",
             }}
           >
             {listening ? "●" : "🎙"}
@@ -399,12 +509,9 @@ export default function Workspace({ projectId }) {
             flexShrink: 0,
             padding: "12px 20px",
             borderRadius: 10,
-            border: "none",
-            background: "linear-gradient(135deg, #38bdf8, #c084fc)",
-            color: "#0a0620",
             fontWeight: 800,
             cursor: "pointer",
-            transition: "transform 0.2s ease, box-shadow 0.2s ease",
+            transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease",
           }}
         >
           Build →
