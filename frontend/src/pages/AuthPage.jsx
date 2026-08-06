@@ -93,7 +93,7 @@ function Scene() {
 
 // ---------- Auth Card ----------
 export default function AuthPage({ onAuthenticated }) {
-  const [mode, setMode] = useState("login"); // "login" | "signup"
+  const [mode, setMode] = useState("login"); // "login" | "signup" | "forgot"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -102,6 +102,14 @@ export default function AuthPage({ onAuthenticated }) {
   const [switching, setSwitching] = useState(false);
   const [mounted, setMounted] = useState(false);
   const googleButtonRef = useRef(null);
+
+  // Forgot/reset password flow
+  const [forgotSent, setForgotSent] = useState(false);
+  const [devResetLink, setDevResetLink] = useState("");
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token"));
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [resetDone, setResetDone] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
@@ -135,6 +143,71 @@ export default function AuthPage({ onAuthenticated }) {
       setLoading(false);
     }
   };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Something went wrong.");
+      setForgotSent(true);
+      // Only present when the backend has no email provider wired up yet
+      // (see _send_reset_email in the backend) — lets this flow be tested
+      // end-to-end without a real inbox.
+      if (data.dev_reset_token) {
+        const link = new URL(window.location.href);
+        link.searchParams.set("token", data.dev_reset_token);
+        setDevResetLink(link.toString());
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword !== newPasswordConfirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken, new_password: newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Something went wrong.");
+      setResetDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const backToLogin = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("token");
+    window.history.replaceState({}, "", url);
+    setResetToken(null);
+    setResetDone(false);
+    setForgotSent(false);
+    setDevResetLink("");
+    setError("");
+    setMode("login");
+  };
+
 
   const handleGoogleCredential = useCallback(async (response) => {
     setError("");
@@ -348,106 +421,230 @@ export default function AuthPage({ onAuthenticated }) {
               transition: "transform 0.22s ease, opacity 0.22s ease",
             }}
           >
-            <h2
-              style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533", animation: "fadeSlide 0.35s ease" }}
-              key={mode + "-title"}
-            >
-              {mode === "login" ? "Welcome back" : "Create your account"}
-            </h2>
-            <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
-              {mode === "login" ? "Sign in to continue building." : "Join NEXUS and start building."}
-            </p>
-
-            <div ref={googleButtonRef} style={{ marginBottom: 12, display: "flex", justifyContent: "center" }} />
-
-            <button
-              onClick={handleGitHubLogin}
-              type="button"
-              className="nexus-social-btn"
-              style={{
-                width: "100%",
-                padding: "11px 16px",
-                borderRadius: 999,
-                border: "1px solid #24153322",
-                background: "#241533",
-                color: "#fff",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                marginBottom: 20,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="#fff">
-                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
-              </svg>
-              Continue with GitHub
-            </button>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
-              <div style={{ flex: 1, height: 1, background: "#24153322" }} />
-              <span style={{ fontSize: 11, color: "#5c4a7099", fontWeight: 600 }}>or</span>
-              <div style={{ flex: 1, height: 1, background: "#24153322" }} />
-            </div>
-
-            <form onSubmit={handleEmailSubmit} key={mode + "-form"} style={{ animation: "fadeSlide 0.4s ease" }}>
-              {mode === "signup" && (
-                <FloatingInput label="Name" value={name} onChange={setName} type="text" />
-              )}
-              <FloatingInput label="Email" value={email} onChange={setEmail} type="email" />
-              <FloatingInput label="Password" value={password} onChange={setPassword} type="password" />
-
-              {error && (
-                <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="nexus-primary-btn"
-                style={{
-                  width: "100%",
-                  padding: "13px 16px",
-                  borderRadius: 12,
-                  border: "none",
-                  background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
-                  color: "#241533",
-                  fontWeight: 800,
-                  fontSize: 15,
-                  cursor: loading ? "default" : "pointer",
-                  marginTop: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease",
-                }}
-              >
-                {loading && (
-                  <span
+            {resetToken ? (
+              resetDone ? (
+                <>
+                  <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Password updated</h2>
+                  <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
+                    You can now sign in with your new password.
+                  </p>
+                  <button
+                    onClick={backToLogin}
+                    className="nexus-primary-btn"
                     style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      border: "2px solid #24153355",
-                      borderTopColor: "#241533",
-                      display: "inline-block",
-                      animation: "spin 0.7s linear infinite",
+                      width: "100%",
+                      padding: "13px 16px",
+                      borderRadius: 12,
+                      border: "none",
+                      background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
+                      color: "#241533",
+                      fontWeight: 800,
+                      fontSize: 15,
+                      cursor: "pointer",
                     }}
-                  />
+                  >
+                    Back to sign in
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Set a new password</h2>
+                  <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
+                    Choose a password for this account. It's separate from any Google or GitHub password.
+                  </p>
+                  <form onSubmit={handleResetSubmit}>
+                    <FloatingInput label="New password" value={newPassword} onChange={setNewPassword} type="password" />
+                    <FloatingInput label="Confirm new password" value={newPasswordConfirm} onChange={setNewPasswordConfirm} type="password" />
+                    {error && <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="nexus-primary-btn"
+                      style={{
+                        width: "100%",
+                        padding: "13px 16px",
+                        borderRadius: 12,
+                        border: "none",
+                        background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
+                        color: "#241533",
+                        fontWeight: 800,
+                        fontSize: 15,
+                        cursor: loading ? "default" : "pointer",
+                      }}
+                    >
+                      {loading ? "Please wait..." : "Update password"}
+                    </button>
+                  </form>
+                </>
+              )
+            ) : mode === "forgot" ? (
+              <>
+                <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Reset your password</h2>
+                <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
+                  Enter your email and we'll send a link to set a new password.
+                </p>
+                {forgotSent ? (
+                  <div style={{ fontSize: 13, color: "#241533" }}>
+                    <p>If an account exists for <b>{email}</b>, a reset link is on its way.</p>
+                    {devResetLink && (
+                      <div style={{ marginTop: 10, padding: 12, borderRadius: 10, background: "#24153310", fontSize: 12 }}>
+                        <strong>Dev mode</strong> — no email provider is configured yet, so here's the link directly:
+                        <br />
+                        <a href={devResetLink} style={{ color: "#e0246e", wordBreak: "break-all" }}>{devResetLink}</a>
+                      </div>
+                    )}
+                    <span onClick={backToLogin} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800, display: "inline-block", marginTop: 14 }}>
+                      ← Back to sign in
+                    </span>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotSubmit}>
+                    <FloatingInput label="Email" value={email} onChange={setEmail} type="email" />
+                    {error && <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="nexus-primary-btn"
+                      style={{
+                        width: "100%",
+                        padding: "13px 16px",
+                        borderRadius: 12,
+                        border: "none",
+                        background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
+                        color: "#241533",
+                        fontWeight: 800,
+                        fontSize: 15,
+                        cursor: loading ? "default" : "pointer",
+                      }}
+                    >
+                      {loading ? "Please wait..." : "Send reset link"}
+                    </button>
+                    <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#5c4a70" }}>
+                      <span onClick={backToLogin} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800 }}>
+                        ← Back to sign in
+                      </span>
+                    </div>
+                  </form>
                 )}
-                {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
-              </button>
-            </form>
+              </>
+            ) : (
+              <>
+                <h2
+                  style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533", animation: "fadeSlide 0.35s ease" }}
+                  key={mode + "-title"}
+                >
+                  {mode === "login" ? "Welcome back" : "Create your account"}
+                </h2>
+                <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
+                  {mode === "login" ? "Sign in to continue building." : "Join NEXUS and start building."}
+                </p>
 
-            <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#5c4a70" }}>
-              {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-              <span onClick={switchMode} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800 }}>
-                {mode === "login" ? "Sign up" : "Sign in"}
-              </span>
-            </div>
+                <div ref={googleButtonRef} style={{ marginBottom: 12, display: "flex", justifyContent: "center" }} />
+
+                <button
+                  onClick={handleGitHubLogin}
+                  type="button"
+                  className="nexus-social-btn"
+                  style={{
+                    width: "100%",
+                    padding: "11px 16px",
+                    borderRadius: 999,
+                    border: "1px solid #24153322",
+                    background: "#241533",
+                    color: "#fff",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    marginBottom: 20,
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="#fff">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+                  </svg>
+                  Continue with GitHub
+                </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
+                  <div style={{ flex: 1, height: 1, background: "#24153322" }} />
+                  <span style={{ fontSize: 11, color: "#5c4a7099", fontWeight: 600 }}>or</span>
+                  <div style={{ flex: 1, height: 1, background: "#24153322" }} />
+                </div>
+
+                <form onSubmit={handleEmailSubmit} key={mode + "-form"} style={{ animation: "fadeSlide 0.4s ease" }}>
+                  {mode === "signup" && (
+                    <FloatingInput label="Name" value={name} onChange={setName} type="text" />
+                  )}
+                  <FloatingInput label="Email" value={email} onChange={setEmail} type="email" />
+                  <FloatingInput label="Password" value={password} onChange={setPassword} type="password" />
+
+                  {mode === "login" && (
+                    <div style={{ textAlign: "right", marginTop: -10, marginBottom: 16 }}>
+                      <span
+                        onClick={() => {
+                          setError("");
+                          setMode("forgot");
+                        }}
+                        style={{ color: "#5c4a70", cursor: "pointer", fontWeight: 600, fontSize: 12 }}
+                      >
+                        Forgot password?
+                      </span>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="nexus-primary-btn"
+                    style={{
+                      width: "100%",
+                      padding: "13px 16px",
+                      borderRadius: 12,
+                      border: "none",
+                      background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
+                      color: "#241533",
+                      fontWeight: 800,
+                      fontSize: 15,
+                      cursor: loading ? "default" : "pointer",
+                      marginTop: 4,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease",
+                    }}
+                  >
+                    {loading && (
+                      <span
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: "50%",
+                          border: "2px solid #24153355",
+                          borderTopColor: "#241533",
+                          display: "inline-block",
+                          animation: "spin 0.7s linear infinite",
+                        }}
+                      />
+                    )}
+                    {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
+                  </button>
+                </form>
+
+                <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#5c4a70" }}>
+                  {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+                  <span onClick={switchMode} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800 }}>
+                    {mode === "login" ? "Sign up" : "Sign in"}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
