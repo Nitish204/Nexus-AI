@@ -20,11 +20,11 @@ function buildLayout() {
 }
 
 const ROLE_STYLE = {
-  product_manager: { color: "#ffb454", glow: "#ffb45488", label: "Product" },
-  frontend_engineer: { color: "#ff8a65", glow: "#ff8a6588", label: "Frontend" },
-  qa_engineer: { color: "#ffcc80", glow: "#ffcc8088", label: "QA" },
-  backend_engineer: { color: "#4dd0e1", glow: "#4dd0e188", label: "Backend" },
-  devops_engineer: { color: "#42a5f5", glow: "#42a5f588", label: "DevOps" },
+  product_manager: { c1: "#ffcf9e", c2: "#ff9d5c", label: "Product" },
+  frontend_engineer: { c1: "#ffb3a0", c2: "#ff6b5c", label: "Frontend" },
+  qa_engineer: { c1: "#ffe89e", c2: "#ffcc5c", label: "QA" },
+  backend_engineer: { c1: "#9ef2e0", c2: "#4dd0c1", label: "Backend" },
+  devops_engineer: { c1: "#9ecfff", c2: "#3f9bff", label: "DevOps" },
 };
 
 // Infra artifacts (Dockerfile, compose, CI config) and test files are
@@ -188,7 +188,7 @@ export default function Workspace({ projectId }) {
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        background: "radial-gradient(circle at 50% 40%, #111111 0%, #0a0a0a 55%, #050505 100%)",
+        background: "linear-gradient(160deg, #f3ecff 0%, #ffeee6 45%, #e6fbf6 100%)",
         fontFamily: "'Space Grotesk', 'Segoe UI', sans-serif",
       }}
     >
@@ -202,8 +202,8 @@ export default function Workspace({ projectId }) {
           100% { opacity: 1; transform: translateY(0); }
         }
         @keyframes nexusGlowPulse {
-          0%, 100% { box-shadow: 0 0 24px #ffffff11; }
-          50% { box-shadow: 0 0 36px #4dd0e122; }
+          0%, 100% { box-shadow: 0 24px 60px -18px #7c3aed22, 0 0 0 1px #ffffff inset; }
+          50% { box-shadow: 0 24px 60px -18px #7c3aed33, 0 0 24px -4px #4dd0c155, 0 0 0 1px #ffffff inset; }
         }
         @keyframes nexusOrbitSpin {
           0% { transform: translate(-50%, -50%) rotate(0deg); }
@@ -214,41 +214,82 @@ export default function Workspace({ projectId }) {
           100% { transform: rotate(-360deg); }
         }
         @keyframes nexusCorePulse {
-          0%, 100% { box-shadow: 0 0 0 0 #ffffff22, 0 0 18px 2px #ffffff1a; transform: translate(-50%, -50%) scale(1); }
-          50% { box-shadow: 0 0 0 10px #ffffff00, 0 0 28px 6px #ffffff2a; transform: translate(-50%, -50%) scale(1.05); }
+          0%, 100% { box-shadow: 0 12px 30px -6px #7c3aed55, 0 0 0 0 #7c3aed22; transform: translate(-50%, -50%) scale(1); }
+          50% { box-shadow: 0 16px 40px -6px #7c3aed77, 0 0 0 14px #7c3aed00; transform: translate(-50%, -50%) scale(1.06); }
         }
-        @keyframes nexusMicBreathe {
-          0%, 100% { box-shadow: 0 0 0 0 #ffffff1a; }
-          50% { box-shadow: 0 0 0 6px #ffffff00; }
+        @keyframes nexusSphereBob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
         }
-        .nexus-build-btn { background: #161616; border: 1px solid #2a2a2a; color: #d8d8d8; }
+        @keyframes nexusActiveGlow {
+          0%, 100% { box-shadow: 0 0 14px 4px currentColor, 0 8px 16px -4px #00000055; }
+          50% { box-shadow: 0 0 28px 10px currentColor, 0 8px 16px -4px #00000055; }
+        }
+        @keyframes nexusBlob1 { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(30px,-20px) scale(1.15); } }
+        @keyframes nexusBlob2 { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-25px,25px) scale(1.1); } }
+        @keyframes nexusBlob3 { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,20px) scale(0.9); } }
+        @keyframes nexusMicRing {
+          0% { transform: scale(1); opacity: 0.5; }
+          100% { transform: scale(2.1); opacity: 0; }
+        }
+        @keyframes nexusSheen {
+          0% { transform: translateX(-120%) skewX(-12deg); }
+          100% { transform: translateX(220%) skewX(-12deg); }
+        }
+        .nexus-glass {
+          background: #ffffffcc;
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
+          border: 1px solid #ffffff;
+          box-shadow: 0 20px 40px -14px #7c3aed22, 0 2px 0 #ffffff inset;
+        }
+        .nexus-build-btn {
+          position: relative;
+          overflow: hidden;
+          background: linear-gradient(120deg, #7c3aed, #ff7a59, #4dd0c1);
+          border: none;
+          color: #ffffff;
+          box-shadow: 0 10px 24px -6px #7c3aed55;
+          letter-spacing: 0.02em;
+        }
+        .nexus-build-btn::after {
+          content: "";
+          position: absolute;
+          top: 0; left: 0;
+          width: 40%; height: 100%;
+          background: linear-gradient(120deg, transparent, #ffffff77, transparent);
+          animation: nexusSheen 2.4s ease-in-out infinite;
+        }
         .nexus-build-btn:hover {
-          background: linear-gradient(135deg, #ffb454, #4dd0e1);
-          color: #0a0a0a;
-          border-color: transparent;
           transform: translateY(-1px);
-          box-shadow: 0 6px 22px #00000055;
+          box-shadow: 0 14px 30px -6px #7c3aed77;
         }
         .nexus-build-btn:active { transform: translateY(0); }
-        .nexus-mic-btn:hover { filter: brightness(1.2); }
+        .nexus-mic-btn:hover { filter: brightness(1.08); }
         .nexus-agent-node { transition: filter 0.3s ease, transform 0.3s ease; }
-        .nexus-agent-node.active { filter: brightness(1.4); transform: scale(1.12); }
+        .nexus-agent-node.active { filter: brightness(1.15); transform: scale(1.18); }
         @media (prefers-reduced-motion: reduce) {
           * { animation: none !important; transition: none !important; }
         }
       `}</style>
 
       {/* Orbital core graph + floating panels — fills all space above the command bar */}
-      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+      <div style={{ flex: 1, position: "relative", minHeight: 0, overflow: "hidden" }}>
+        {/* Drifting aurora color blobs for a bright, alive backdrop instead of flat white */}
+        <div style={{ position: "absolute", width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, #a78bfa88, transparent 70%)", top: -60, left: -40, animation: "nexusBlob1 9s ease-in-out infinite", filter: "blur(6px)" }} />
+        <div style={{ position: "absolute", width: 240, height: 240, borderRadius: "50%", background: "radial-gradient(circle, #ff9d7a77, transparent 70%)", bottom: -40, right: -30, animation: "nexusBlob2 11s ease-in-out infinite", filter: "blur(6px)" }} />
+        <div style={{ position: "absolute", width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(circle, #5eead477, transparent 70%)", bottom: 40, left: 20, animation: "nexusBlob3 8s ease-in-out infinite", filter: "blur(6px)" }} />
+        <div style={{ position: "absolute", width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, #ffd66688, transparent 70%)", top: 100, right: 60, animation: "nexusBlob3 10s ease-in-out infinite", filter: "blur(6px)" }} />
+
         <div
           style={{
             position: "absolute",
             inset: 0,
             backgroundImage:
-              "linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px)",
-            backgroundSize: "34px 34px",
-            maskImage: "radial-gradient(circle at 50% 55%, black 0%, transparent 72%)",
-            WebkitMaskImage: "radial-gradient(circle at 50% 55%, black 0%, transparent 72%)",
+              "linear-gradient(#7c3aed0a 1px, transparent 1px), linear-gradient(90deg, #7c3aed0a 1px, transparent 1px)",
+            backgroundSize: "38px 38px",
+            maskImage: "radial-gradient(circle at 50% 55%, black 0%, transparent 68%)",
+            WebkitMaskImage: "radial-gradient(circle at 50% 55%, black 0%, transparent 68%)",
           }}
         />
 
@@ -301,18 +342,22 @@ export default function Workspace({ projectId }) {
                     <div
                       className={`nexus-agent-node${active ? " active" : ""}`}
                       style={{
-                        width: 22,
-                        height: 22,
+                        width: active ? 30 : 24,
+                        height: active ? 30 : 24,
                         borderRadius: "50%",
-                        background: style.color,
-                        boxShadow: active ? `0 0 22px 4px ${style.glow}` : `0 0 10px 1px ${style.glow}`,
+                        background: `radial-gradient(circle at 30% 30%, ${style.c1}, ${style.c2} 70%)`,
+                        boxShadow: `0 8px 16px -4px ${style.c2}88, inset -3px -3px 6px #00000022`,
+                        color: style.c2,
+                        animation: active
+                          ? "nexusSphereBob 3.4s ease-in-out infinite, nexusActiveGlow 1s ease-in-out infinite"
+                          : "nexusSphereBob 3.4s ease-in-out infinite",
                       }}
                     />
                     <span
                       style={{
                         fontSize: 10.5,
-                        fontWeight: 600,
-                        color: active ? style.color : "#8a8a8a",
+                        fontWeight: 700,
+                        color: active ? style.c2 : "#8a8a9a",
                         letterSpacing: "0.03em",
                         whiteSpace: "nowrap",
                       }}
@@ -325,39 +370,55 @@ export default function Workspace({ projectId }) {
             })}
           </div>
 
-          {/* Static connector lines from core to each orbit radius (visual field, not per-node tracking) */}
+          {/* Static connector ring around the orbit radius */}
           <svg
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
             viewBox="0 0 100 100"
           >
-            <circle cx="50" cy="50" r="34" fill="none" stroke="#ffffff14" strokeWidth="0.4" />
+            <circle cx="50" cy="50" r="34" fill="none" stroke="#7c3aed22" strokeWidth="0.4" />
           </svg>
 
-          {/* Monochrome core, pulsing gently on its own — brighter while any agent is busy */}
+          {/* Soft ambient bloom behind the core for depth, then the glowing 3D core itself */}
           <div
             style={{
               position: "absolute",
               left: "50%",
               top: "50%",
-              width: 46,
-              height: 46,
+              width: 140,
+              height: 140,
+              transform: "translate(-50%, -50%)",
+              borderRadius: "50%",
+              background: "radial-gradient(circle, #7c3aed1a 0%, transparent 70%)",
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: 48,
+              height: 48,
               borderRadius: "50%",
               background: busy
-                ? "radial-gradient(circle at 35% 30%, #ffffff, #cfcfcf 70%)"
-                : "radial-gradient(circle at 35% 30%, #e8e8e8, #9a9a9a 70%)",
-              animation: `nexusCorePulse ${busy ? 1.6 : 3.4}s ease-in-out infinite`,
+                ? "radial-gradient(circle at 32% 28%, #ede9fe, #7c3aed 75%)"
+                : "radial-gradient(circle at 32% 28%, #c4b5fd, #7c3aed 75%)",
+              animation: `nexusCorePulse ${busy ? 1.6 : 3}s ease-in-out infinite`,
             }}
           />
         </div>
 
         {/* Analytics panel — floats top-left over the canvas only */}
         <div
+          className="nexus-glass"
           style={{
             position: "absolute",
             top: 12,
             left: 12,
             zIndex: 2,
             maxWidth: "calc(100vw - 24px)",
+            borderRadius: 14,
+            padding: 2,
             opacity: mounted ? 1 : 0,
             animation: mounted ? "nexusPanelIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.05s both" : "none",
           }}
@@ -367,6 +428,7 @@ export default function Workspace({ projectId }) {
 
         {/* Code editor — floats top-right over the canvas only, shrinks on mobile */}
         <div
+          className="nexus-glass"
           style={{
             position: "absolute",
             top: 12,
@@ -377,10 +439,8 @@ export default function Workspace({ projectId }) {
             minWidth: 180,
             borderRadius: 14,
             overflow: "hidden",
-            border: "1px solid #ffffff22",
             display: "flex",
             flexDirection: "column",
-            background: "#0a0a0a",
             opacity: mounted ? 1 : 0,
             animation: mounted
               ? "nexusPanelIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.15s both, nexusGlowPulse 6s ease-in-out infinite"
@@ -453,10 +513,11 @@ export default function Workspace({ projectId }) {
           gap: 8,
           padding: "10px 12px",
           paddingBottom: "max(10px, env(safe-area-inset-bottom))",
-          background: "rgba(10, 10, 10, 0.85)",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
-          borderTop: "1px solid #ffffff1a",
+          background: "linear-gradient(180deg, #ffffffee, #ffffff)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderTop: "1px solid #eee2ff",
+          boxShadow: "0 -10px 30px -14px #7c3aed22",
           opacity: mounted ? 1 : 0,
           animation: mounted ? "nexusBarIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.2s both" : "none",
         }}
@@ -468,50 +529,82 @@ export default function Workspace({ projectId }) {
           style={{
             flex: 1,
             minWidth: 0,
-            padding: "12px 14px",
-            borderRadius: 10,
-            border: "1px solid #ffffff2a",
-            background: "#141414",
-            color: "#e8e8e8",
+            padding: "13px 16px",
+            borderRadius: 14,
+            border: "1px solid #ece6ff",
+            background: "#faf9ff",
+            boxShadow: "0 2px 6px #7c3aed11 inset",
+            color: "#3a3a4a",
             fontFamily: "inherit",
             fontSize: 14,
             outline: "none",
           }}
         />
         {voiceSupported && (
-          <button
-            type="button"
-            onClick={startListening}
-            title="Voice command"
-            className="nexus-mic-btn"
-            style={{
-              flexShrink: 0,
-              width: 46,
-              padding: 0,
-              borderRadius: "50%",
-              border: `1px solid ${listening ? "#ff8a65" : "#ffffff33"}`,
-              background: listening ? "#ff8a65" : "#141414",
-              color: listening ? "#0a0a0a" : "#c8c8c8",
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: 16,
-              transition: "filter 0.2s ease, background 0.2s ease, border-color 0.2s ease",
-              animation: listening ? "none" : "nexusMicBreathe 2.6s ease-in-out infinite",
-            }}
-          >
-            {listening ? "●" : "🎙"}
-          </button>
+          <div style={{ position: "relative", width: 50, height: 50, flexShrink: 0 }}>
+            {listening && (
+              <>
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    border: "2px solid #ff7a59",
+                    animation: "nexusMicRing 1.8s ease-out infinite",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    border: "2px solid #ff7a59",
+                    animation: "nexusMicRing 1.8s ease-out infinite 0.6s",
+                  }}
+                />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={startListening}
+              title="Voice command"
+              className="nexus-mic-btn"
+              style={{
+                position: "relative",
+                width: 44,
+                height: 44,
+                margin: 3,
+                padding: 0,
+                borderRadius: "50%",
+                border: "none",
+                background: "radial-gradient(circle at 32% 28%, #ffcaa8, #ff7a59 75%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "0 8px 18px -4px #ff7a5977",
+                transition: "transform 0.15s ease",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <rect x="9" y="2" width="6" height="12" rx="3" fill="white" />
+                <path d="M5 11a7 7 0 0 0 14 0" stroke="white" strokeWidth="2" strokeLinecap="round" fill="none" />
+                <line x1="12" y1="18" x2="12" y2="22" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                <line x1="8" y1="22" x2="16" y2="22" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
         )}
         <button
           type="submit"
           className="nexus-build-btn"
           style={{
             flexShrink: 0,
-            padding: "12px 20px",
-            borderRadius: 10,
+            padding: "13px 22px",
+            borderRadius: 14,
             fontWeight: 800,
             cursor: "pointer",
-            transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease",
+            transition: "transform 0.2s ease, box-shadow 0.2s ease",
           }}
         >
           Build →
