@@ -32,3 +32,23 @@ def decode_access_token(token: str) -> str | None:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+# Password-reset tokens are JWTs too, but carry a "purpose" claim so a
+# reset token can never be replayed as a normal access token (or vice
+# versa) even though they're signed with the same secret. Short 15-min
+# expiry limits how long a leaked reset link stays usable.
+def create_reset_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    payload = {"sub": user_id, "exp": expire, "purpose": "password_reset"}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_reset_token(token: str) -> str | None:
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        if payload.get("purpose") != "password_reset":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
