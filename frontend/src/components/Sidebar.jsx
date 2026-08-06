@@ -47,13 +47,14 @@ function formatRelative(dateStr, now) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-const ACCENT = "#38bdf8";
-const ACCENT_2 = "#c084fc";
+const ACCENT = "#7c3aed";
+const ACCENT_2 = "#ff7a59";
+const ACCENT_3 = "#4dd0c1";
 
 const iconBtnStyle = {
   background: "none",
   border: "none",
-  color: "#a5b4fc99",
+  color: "#9a9aaa",
   cursor: "pointer",
   fontSize: 12,
   padding: "4px 6px",
@@ -178,27 +179,68 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
   }, [projects, search]);
 
   const grouped = groupByDay([...filtered].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+  const groupColors = [ACCENT, ACCENT_2, ACCENT_3];
+  const todayCount = projects.filter((p) => new Date(p.updated_at || p.created_at) >= new Date(new Date().setHours(0, 0, 0, 0))).length;
 
   const content = (
     <div
       style={{
         width: 292,
         height: "100%",
-        background: "linear-gradient(180deg, rgba(13,9,38,0.97) 0%, rgba(9,6,26,0.97) 100%)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
-        borderRight: "1px solid rgba(124,58,237,0.22)",
+        position: "relative",
+        overflow: "hidden",
+        background: "linear-gradient(180deg, #f3ecff 0%, #ffeee6 55%, #e6fbf6 100%)",
+        borderRight: "1px solid #7c3aed14",
         display: "flex",
         flexDirection: "column",
         fontFamily: "'Space Grotesk', 'Segoe UI', sans-serif",
-        color: "#e9e4ff",
+        color: "#2e2e3a",
       }}
     >
+      {/* Drifting aurora color blobs for a bright, alive backdrop */}
+      <div style={{ position: "absolute", width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(circle, #a78bfa66, transparent 70%)", top: -50, left: -40, animation: "nexusBlobFloat1 9s ease-in-out infinite", filter: "blur(6px)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", width: 190, height: 190, borderRadius: "50%", background: "radial-gradient(circle, #5eead455, transparent 70%)", bottom: 100, right: -40, animation: "nexusBlobFloat2 11s ease-in-out infinite", filter: "blur(6px)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", width: 150, height: 150, borderRadius: "50%", background: "radial-gradient(circle, #ffd66655, transparent 70%)", top: 280, left: -30, animation: "nexusBlobFloat2 13s ease-in-out infinite", filter: "blur(6px)", pointerEvents: "none" }} />
+
+      {/* Logo mark */}
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, padding: "16px 18px 4px" }}>
+        <div style={{ position: "relative", width: 22, height: 22 }}>
+          <div style={{ position: "absolute", inset: 0, border: "1.5px dashed #7c3aed55", borderRadius: "50%", animation: "nexusRingSpin 12s linear infinite" }} />
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "radial-gradient(circle at 32% 28%, #c4b5fd, #7c3aed 75%)",
+              transform: "translate(-50%, -50%)",
+              animation: "nexusLogoDotPulse 2.4s ease-in-out infinite",
+            }}
+          />
+        </div>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            background: "linear-gradient(120deg, #7c3aed, #ff7a59, #4dd0c1)",
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            color: "transparent",
+          }}
+        >
+          NEXUS
+        </span>
+      </div>
+
       {/* Account header */}
       <div
         style={{
-          padding: "18px 18px 16px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          position: "relative",
+          padding: "10px 18px 14px",
+          borderBottom: "1px solid #7c3aed14",
           display: "flex",
           alignItems: "center",
           gap: 11,
@@ -208,75 +250,92 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
           <img
             src={user.avatar_url}
             alt=""
-            style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0, border: "1.5px solid rgba(56,189,248,0.5)" }}
+            style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, animation: "nexusAvatarGlow 2.6s ease-in-out infinite" }}
           />
         ) : (
           <div
             style={{
-              width: 36,
-              height: 36,
+              width: 38,
+              height: 38,
               borderRadius: "50%",
-              background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_2})`,
+              background: "radial-gradient(circle at 32% 28%, #c4b5fd, #7c3aed 75%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontWeight: 800,
               fontSize: 14,
-              color: "#0a0620",
+              color: "#ffffff",
               flexShrink: 0,
+              animation: "nexusAvatarGlow 2.6s ease-in-out infinite",
             }}
           >
             {(user?.name || user?.email || "?")[0].toUpperCase()}
           </div>
         )}
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#2e2e3a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {user?.name || "Account"}
           </div>
-          <div style={{ fontSize: 11, color: "#a5b4fc80", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: 11, color: "#8a8a9a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {user?.email}
           </div>
         </div>
         <button
           onClick={onLogout}
           title="Log out"
+          className="nexus-glass"
           style={{
-            background: "none",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#a5b4fc99",
+            border: "1px solid #ffffff",
+            color: "#7c3aed",
             fontSize: 10.5,
-            fontWeight: 600,
+            fontWeight: 700,
             cursor: "pointer",
-            padding: "5px 9px",
-            borderRadius: 7,
+            padding: "6px 11px",
+            borderRadius: 8,
             flexShrink: 0,
             transition: "color 0.15s ease, border-color 0.15s ease",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = "#fb7185";
-            e.currentTarget.style.borderColor = "rgba(251,113,133,0.4)";
+            e.currentTarget.style.color = "#ff5c5c";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = "#a5b4fc99";
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+            e.currentTarget.style.color = "#7c3aed";
           }}
         >
           Logout
         </button>
       </div>
 
+      {/* Mini stat strip */}
+      <div style={{ position: "relative", display: "flex", gap: 8, padding: "12px 18px 0" }}>
+        <div className="nexus-glass" style={{ flex: 1, borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: ACCENT }}>{projects.length}</div>
+          <div style={{ fontSize: 9, color: "#9a9aaa", fontWeight: 600 }}>projects</div>
+        </div>
+        <div className="nexus-glass" style={{ flex: 1, borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: ACCENT_2 }}>{todayCount}</div>
+          <div style={{ fontSize: 9, color: "#9a9aaa", fontWeight: 600 }}>today</div>
+        </div>
+        <div className="nexus-glass" style={{ flex: 1, borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: ACCENT_3 }}>{currentProjectId ? 1 : 0}</div>
+          <div style={{ fontSize: 9, color: "#9a9aaa", fontWeight: 600 }}>open</div>
+        </div>
+      </div>
+
       {/* New project + search */}
-      <div style={{ padding: "14px 16px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ position: "relative", padding: "14px 16px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
         <button
           onClick={createNewProject}
           className="nexus-new-project-btn"
           style={{
+            position: "relative",
+            overflow: "hidden",
             width: "100%",
-            padding: "11px 14px",
-            borderRadius: 11,
+            padding: "12px 14px",
+            borderRadius: 12,
             border: "none",
-            background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_2})`,
-            color: "#0a0620",
+            background: "linear-gradient(120deg, #7c3aed, #ff7a59, #4dd0c1)",
+            color: "#ffffff",
             fontWeight: 800,
             fontSize: 13,
             cursor: "pointer",
@@ -284,10 +343,12 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
             alignItems: "center",
             justifyContent: "center",
             gap: 6,
+            boxShadow: "0 10px 22px -8px #7c3aed55",
             transition: "transform 0.18s ease, box-shadow 0.18s ease",
           }}
         >
-          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span> New Project
+          <span style={{ fontSize: 15, lineHeight: 1 }}>✦</span> New Project
+          <span className="nexus-btn-sheen" />
         </button>
 
         {projects.length > 4 && (
@@ -295,13 +356,13 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search projects..."
+            className="nexus-glass"
             style={{
               width: "100%",
-              padding: "8px 12px",
-              borderRadius: 9,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(255,255,255,0.04)",
-              color: "#e9e4ff",
+              padding: "9px 12px",
+              borderRadius: 10,
+              border: "1px solid #ffffff",
+              color: "#2e2e3a",
               fontFamily: "inherit",
               fontSize: 12.5,
               outline: "none",
@@ -311,15 +372,15 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
       </div>
 
       {/* Project list */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px 10px 16px" }}>
+      <div style={{ position: "relative", flex: 1, overflowY: "auto", padding: "6px 10px 16px" }}>
         {loading && (
-          <div style={{ padding: "14px 8px", fontSize: 12, color: "#a5b4fc80", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ padding: "14px 8px", fontSize: 12, color: "#8a8a9a", display: "flex", alignItems: "center", gap: 8 }}>
             <span
               style={{
                 width: 12,
                 height: 12,
                 borderRadius: "50%",
-                border: "2px solid rgba(165,180,252,0.3)",
+                border: "2px solid #7c3aed33",
                 borderTopColor: ACCENT,
                 display: "inline-block",
                 animation: "nexusSpin 0.7s linear infinite",
@@ -329,25 +390,27 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
           </div>
         )}
         {!loading && filtered.length === 0 && projects.length > 0 && (
-          <div style={{ padding: "14px 8px", fontSize: 12, color: "#a5b4fc80" }}>No projects match "{search}".</div>
+          <div style={{ padding: "14px 8px", fontSize: 12, color: "#8a8a9a" }}>No projects match "{search}".</div>
         )}
         {!loading && projects.length === 0 && (
-          <div style={{ padding: "14px 8px", fontSize: 12, color: "#a5b4fc80" }}>No projects yet — create one above.</div>
+          <div style={{ padding: "14px 8px", fontSize: 12, color: "#8a8a9a" }}>No projects yet — create one above.</div>
         )}
 
-        {grouped.map(([label, items]) => (
+        {grouped.map(([label, items], groupIdx) => (
           <div key={label} style={{ marginBottom: 16 }}>
-            <div
-              style={{
-                fontSize: 10,
-                letterSpacing: "0.08em",
-                fontWeight: 700,
-                color: "#a5b4fc55",
-                padding: "8px 8px 7px",
-                textTransform: "uppercase",
-              }}
-            >
-              {label}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 8px 7px" }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: groupColors[groupIdx % groupColors.length] }} />
+              <span
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.08em",
+                  fontWeight: 700,
+                  color: groupColors[groupIdx % groupColors.length],
+                  textTransform: "uppercase",
+                }}
+              >
+                {label}
+              </span>
             </div>
             {items.map((p) => {
               const isActive = p.id === currentProjectId;
@@ -359,42 +422,27 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
                     if (isRenaming) return;
                     selectProject(p.id);
                   }}
-                  className="nexus-sidebar-item"
+                  className={`nexus-sidebar-item${isActive ? " nexus-glass" : ""}`}
                   style={{
                     position: "relative",
-                    padding: "9px 10px 9px 14px",
-                    borderRadius: 10,
-                    marginBottom: 3,
+                    padding: "10px 10px 10px 14px",
+                    borderRadius: 12,
+                    marginBottom: 5,
                     cursor: isRenaming ? "default" : "pointer",
-                    background: isActive
-                      ? "linear-gradient(90deg, rgba(56,189,248,0.14), rgba(192,132,252,0.08))"
-                      : "transparent",
-                    border: isActive ? "1px solid rgba(56,189,248,0.3)" : "1px solid transparent",
+                    border: isActive ? `1px solid ${ACCENT}33` : "1px solid transparent",
+                    borderLeft: isActive ? `3px solid ${ACCENT}` : "3px solid transparent",
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    transition: "background 0.15s ease, border-color 0.15s ease",
+                    transition: "background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease",
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.035)";
+                    if (!isActive) e.currentTarget.style.background = "#ffffff88";
                   }}
                   onMouseLeave={(e) => {
                     if (!isActive) e.currentTarget.style.background = "transparent";
                   }}
                 >
-                  {isActive && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        top: "22%",
-                        bottom: "22%",
-                        width: 3,
-                        borderRadius: 3,
-                        background: `linear-gradient(180deg, ${ACCENT}, ${ACCENT_2})`,
-                      }}
-                    />
-                  )}
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {isRenaming ? (
                       <input
@@ -412,10 +460,10 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
                         onBlur={() => commitRename(p.id)}
                         style={{
                           width: "100%",
-                          background: "#0a0620",
+                          background: "#ffffff",
                           border: `1px solid ${ACCENT}88`,
                           borderRadius: 6,
-                          color: "#e9e4ff",
+                          color: "#2e2e3a",
                           fontFamily: "inherit",
                           fontSize: 13,
                           padding: "3px 6px",
@@ -423,19 +471,41 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
                       />
                     ) : (
                       <>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: isActive ? 700 : 500,
-                            color: isActive ? "#e0f2fe" : "#e9e4ffcc",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {p.name || "Untitled Project"}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: isActive ? 700 : 500,
+                              color: isActive ? "#2e2e3a" : "#3a3a4a",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {p.name || "Untitled Project"}
+                          </div>
+                          {isActive && (
+                            <span
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 700,
+                                padding: "2px 7px",
+                                borderRadius: 20,
+                                background: `${ACCENT}1a`,
+                                color: ACCENT,
+                                flexShrink: 0,
+                              }}
+                            >
+                              active
+                            </span>
+                          )}
                         </div>
-                        <div style={{ fontSize: 10.5, color: "#a5b4fc70", marginTop: 1 }}>
+                        {isActive && (
+                          <div style={{ marginTop: 7, height: 4, borderRadius: 4, background: `${ACCENT}14`, overflow: "hidden" }}>
+                            <div style={{ height: "100%", borderRadius: 4, background: `linear-gradient(90deg, ${ACCENT}, ${ACCENT_3})`, animation: "nexusBarGrow 1s ease-out both" }} />
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10.5, color: "#9a9aaa", marginTop: 4 }}>
                           {formatRelative(p.updated_at || p.created_at, now)}
                         </div>
                       </>
@@ -449,7 +519,7 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
                         title="Rename"
                         style={iconBtnStyle}
                         onMouseEnter={(e) => (e.currentTarget.style.color = ACCENT)}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = "#a5b4fc99")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#9a9aaa")}
                       >
                         ✎
                       </button>
@@ -457,8 +527,8 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
                         onClick={(e) => deleteProject(p, e)}
                         title="Delete"
                         style={iconBtnStyle}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = "#fb7185")}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = "#a5b4fc99")}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "#ff5c5c")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#9a9aaa")}
                       >
                         ✕
                       </button>
@@ -471,16 +541,34 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         ))}
       </div>
 
-      <div style={{ padding: "10px 18px", borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 10, color: "#a5b4fc55", textAlign: "center" }}>
+      <div style={{ position: "relative", padding: "10px 18px", borderTop: "1px solid #7c3aed14", fontSize: 10, color: "#9a9aaa", textAlign: "center" }}>
         NEXUS · Autonomous AI developer workspace
       </div>
 
       <style>{`
+        .nexus-glass {
+          background: #ffffffcc;
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          box-shadow: 0 14px 30px -12px #7c3aed22;
+        }
         .nexus-sidebar-item:hover .nexus-sidebar-actions { opacity: 1 !important; }
-        .nexus-new-project-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(56,189,248,0.35); }
+        .nexus-new-project-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 28px -6px #7c3aed77; }
         .nexus-new-project-btn:active { transform: translateY(0); }
+        .nexus-btn-sheen {
+          position: absolute; top: 0; left: 0; width: 40%; height: 100%;
+          background: linear-gradient(120deg, transparent, #ffffff77, transparent);
+          animation: nexusSheen 2.4s ease-in-out infinite;
+        }
         @keyframes nexusSpin { to { transform: rotate(360deg); } }
         @keyframes nexusSidebarSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(0); } }
+        @keyframes nexusBlobFloat1 { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,-15px) scale(1.15); } }
+        @keyframes nexusBlobFloat2 { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-15px,20px) scale(1.1); } }
+        @keyframes nexusRingSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes nexusLogoDotPulse { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.3); } }
+        @keyframes nexusAvatarGlow { 0%, 100% { box-shadow: 0 0 0 0 #7c3aed44; } 50% { box-shadow: 0 0 0 6px #7c3aed00; } }
+        @keyframes nexusSheen { 0% { transform: translateX(-130%) skewX(-12deg); } 100% { transform: translateX(230%) skewX(-12deg); } }
+        @keyframes nexusBarGrow { 0% { width: 0%; } 100% { width: 64%; } }
         @media (prefers-reduced-motion: reduce) {
           * { animation: none !important; transition: none !important; }
         }
@@ -512,13 +600,13 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
             width: 38,
             height: 38,
             borderRadius: 10,
-            border: "1px solid rgba(56,189,248,0.4)",
-            background: "rgba(13,9,38,0.9)",
+            border: "1px solid #ffffff",
+            background: "#ffffffcc",
             backdropFilter: "blur(10px)",
             color: ACCENT,
             fontSize: 18,
             cursor: "pointer",
-            boxShadow: "0 4px 18px rgba(0,0,0,0.4)",
+            boxShadow: "0 4px 18px -6px #7c3aed33",
           }}
         >
           ☰
