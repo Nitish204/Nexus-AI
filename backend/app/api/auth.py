@@ -11,11 +11,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
-    create_reset_token,
     decode_access_token,
-    decode_reset_token,
     hash_password,
+    hash_security_answer,
     verify_password,
+    verify_security_answer,
 )
 from app.db.models import AuthProvider, User
 from app.db.session import get_session
@@ -28,6 +28,8 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     name: str = ""
+    security_question: str
+    security_answer: str
 
 
 class LoginRequest(BaseModel):
@@ -43,12 +45,9 @@ class GitHubLoginRequest(BaseModel):
     code: str
 
 
-class ForgotPasswordRequest(BaseModel):
+class DirectResetPasswordRequest(BaseModel):
     email: str
-
-
-class ResetPasswordRequest(BaseModel):
-    token: str
+    security_answer: str
     new_password: str
 
 
@@ -69,6 +68,8 @@ async def signup(body: SignupRequest, session: AsyncSession = Depends(get_sessio
         name=body.name or body.email.split("@")[0],
         password_hash=hash_password(body.password),
         provider=AuthProvider.LOCAL,
+        security_question=body.security_question,
+        security_answer_hash=hash_security_answer(body.security_answer),
     )
     session.add(user)
     await session.commit()
@@ -96,45 +97,32 @@ async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)
     return _issue(user)
 
 
-def _send_reset_email(email: str, reset_link: str) -> None:
+@router.get("/security-question")
+async def get_security_question(email: str, session: AsyncSession = Depends(get_session)):
     """
-    No SMTP/email provider is configured yet, so this just logs the
-    link server-side. Wire in a real provider (SES, SendGrid, Postmark,
-    etc.) here — the rest of the flow (token creation/verification,
-    endpoints, frontend screen) doesn't need to change when you do.
+    Returns the security question for an email so the frontend can show
+    it before asking for the answer. Note: this necessarily confirms
+    whether an email is registered (unlike a typical "forgot password"
+    flow) — that's an accepted tradeoff of skipping email verification
+    entirely, not an oversight.
     """
-    print(f"[password reset] {email} -> {reset_link}")
+    user = (await session.exec(select(User).where(User.email == email))).first()
+    if not user or not user.security_question:
+        raise HTTPException(
+            404,
+            "No security question is set up for that email. If this account was created "
+            "with Google or GitHub before security questions existed, sign in that way instead.",
+        )
+    return {"security_question": user.security_question}
 
 
-@router.post("/forgot-password")
-async def forgot_password(body: ForgotPasswordRequest, session: AsyncSession = Depends(get_session)):
+@router.post("/reset-password-direct")
+async def reset_password_direct(body: DirectResetPasswordRequest, session: AsyncSession = Depends(get_session)):
     user = (await session.exec(select(User).where(User.email == body.email))).first()
-    # Always return the same response whether or not the account exists,
-    # so this endpoint can't be used to test which emails are registered.
-    generic_response = {"message": "If an account exists for that email, a reset link has been sent."}
-    if not user:
-        return generic_response
-
-    token = create_reset_token(user.id)
-    reset_link = f"{settings.frontend_base_url}/reset-password?token={token}"
-    _send_reset_email(user.email, reset_link)
-
-    if settings.environment == "development":
-        # Surfaced directly so the flow is testable with no email
-        # provider configured — remove this field once real email
-        # sending is wired up in _send_reset_email above.
-        generic_response["dev_reset_token"] = token
-    return generic_response
-
-
-@router.post("/reset-password")
-async def reset_password(body: ResetPasswordRequest, session: AsyncSession = Depends(get_session)):
-    user_id = decode_reset_token(body.token)
-    if not user_id:
-        raise HTTPException(400, "This reset link is invalid or has expired. Please request a new one.")
-    user = await session.get(User, user_id)
-    if not user:
-        raise HTTPException(400, "This reset link is invalid or has expired. Please request a new one.")
+    if not user or not user.security_answer_hash:
+        raise HTTPException(400, "No security question is set up for that email.")
+    if not verify_security_answer(body.security_answer, user.security_answer_hash):
+        raise HTTPException(400, "That answer doesn't match. Please try again.")
     if len(body.new_password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters.")
 
