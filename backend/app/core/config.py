@@ -14,9 +14,6 @@ class Settings(BaseSettings):
     app_name: str = "NEXUS Autonomous Developer Workspace"
     environment: str = "development"
     debug: bool = True
-    # Used to build absolute links (e.g. password-reset links) that point
-    # back at the deployed frontend rather than localhost.
-    frontend_base_url: str = "http://localhost:5173"
 
     # Security
     secret_key: str = "change-me-in-production"
