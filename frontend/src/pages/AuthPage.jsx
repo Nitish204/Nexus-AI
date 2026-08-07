@@ -6,6 +6,27 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
 
+const SECURITY_QUESTIONS = [
+  "What city were you born in?",
+  "What was the name of your first pet?",
+  "What is your mother's maiden name?",
+  "What was the model of your first car?",
+  "What elementary school did you attend?",
+];
+
+// fetch() throws a bare "Failed to fetch" (or "Load failed" in Safari)
+// when the request never reaches a server at all — CORS block, DNS
+// failure, the backend being down/asleep, etc. That string means
+// nothing to a user reading it as if it were a password error, so it
+// gets rewritten into something actionable instead of shown verbatim.
+function friendlyError(err) {
+  const msg = err?.message || "";
+  if (msg === "Failed to fetch" || msg === "Load failed" || msg === "NetworkError when attempting to fetch resource.") {
+    return "Couldn't reach the server. It may be offline or still deploying — please try again in a moment.";
+  }
+  return msg || "Something went wrong.";
+}
+
 // ---------- 3D Scene: a cluster of distorted, floating gems over a bright gradient ----------
 function CenterGem({ pointer }) {
   const meshRef = useRef();
@@ -103,13 +124,19 @@ export default function AuthPage({ onAuthenticated }) {
   const [mounted, setMounted] = useState(false);
   const googleButtonRef = useRef(null);
 
-  // Forgot/reset password flow
-  const [forgotSent, setForgotSent] = useState(false);
-  const [devResetLink, setDevResetLink] = useState("");
-  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token"));
+  // Forgot/reset password flow — no email, no link. Enter email, answer
+  // the security question set at signup, then set a new password.
+  const [forgotStep, setForgotStep] = useState("email"); // "email" | "answer"
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [securityQuestion, setSecurityQuestion] = useState("");
+  const [securityAnswer, setSecurityAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [resetDone, setResetDone] = useState(false);
+
+  // Signup-only: security question chosen + answered at account creation
+  const [securityQuestionChoice, setSecurityQuestionChoice] = useState(SECURITY_QUESTIONS[0]);
+  const [securityAnswerSignup, setSecurityAnswerSignup] = useState("");
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
@@ -128,7 +155,16 @@ export default function AuthPage({ onAuthenticated }) {
     setLoading(true);
     try {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      const body = mode === "login" ? { email, password } : { email, password, name };
+      const body =
+        mode === "login"
+          ? { email, password }
+          : {
+              email,
+              password,
+              name,
+              security_question: securityQuestionChoice,
+              security_answer: securityAnswerSignup,
+            };
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,35 +174,24 @@ export default function AuthPage({ onAuthenticated }) {
       if (!res.ok) throw new Error(data.detail || "Something went wrong.");
       saveSession(data);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleForgotSubmit = async (e) => {
+  const handleFetchQuestion = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+      const res = await fetch(`${API_BASE}/api/auth/security-question?email=${encodeURIComponent(forgotEmail)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Something went wrong.");
-      setForgotSent(true);
-      // Only present when the backend has no email provider wired up yet
-      // (see _send_reset_email in the backend) — lets this flow be tested
-      // end-to-end without a real inbox.
-      if (data.dev_reset_token) {
-        const link = new URL(window.location.href);
-        link.searchParams.set("token", data.dev_reset_token);
-        setDevResetLink(link.toString());
-      }
+      setSecurityQuestion(data.security_question);
+      setForgotStep("answer");
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -181,29 +206,33 @@ export default function AuthPage({ onAuthenticated }) {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+      const res = await fetch(`${API_BASE}/api/auth/reset-password-direct`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken, new_password: newPassword }),
+        body: JSON.stringify({
+          email: forgotEmail,
+          security_answer: securityAnswer,
+          new_password: newPassword,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Something went wrong.");
       setResetDone(true);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
   };
 
   const backToLogin = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.delete("token");
-    window.history.replaceState({}, "", url);
-    setResetToken(null);
+    setForgotStep("email");
+    setForgotEmail("");
+    setSecurityQuestion("");
+    setSecurityAnswer("");
+    setNewPassword("");
+    setNewPasswordConfirm("");
     setResetDone(false);
-    setForgotSent(false);
-    setDevResetLink("");
     setError("");
     setMode("login");
   };
@@ -222,7 +251,7 @@ export default function AuthPage({ onAuthenticated }) {
       if (!res.ok) throw new Error(data.detail || "Google sign-in failed.");
       saveSession(data);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -277,7 +306,7 @@ export default function AuthPage({ onAuthenticated }) {
         window.history.replaceState({}, "", url);
         saveSession(data);
       } catch (err) {
-        setError(err.message);
+        setError(friendlyError(err));
       } finally {
         setLoading(false);
       }
@@ -421,7 +450,7 @@ export default function AuthPage({ onAuthenticated }) {
               transition: "transform 0.22s ease, opacity 0.22s ease",
             }}
           >
-            {resetToken ? (
+            {mode === "forgot" ? (
               resetDone ? (
                 <>
                   <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Password updated</h2>
@@ -446,13 +475,62 @@ export default function AuthPage({ onAuthenticated }) {
                     Back to sign in
                   </button>
                 </>
+              ) : forgotStep === "email" ? (
+                <>
+                  <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Reset your password</h2>
+                  <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
+                    Enter your account email to continue. No email will be sent — you'll verify with your
+                    security question instead.
+                  </p>
+                  <form onSubmit={handleFetchQuestion}>
+                    <FloatingInput label="Email" value={forgotEmail} onChange={setForgotEmail} type="email" />
+                    {error && <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="nexus-primary-btn"
+                      style={{
+                        width: "100%",
+                        padding: "13px 16px",
+                        borderRadius: 12,
+                        border: "none",
+                        background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
+                        color: "#241533",
+                        fontWeight: 800,
+                        fontSize: 15,
+                        cursor: loading ? "default" : "pointer",
+                      }}
+                    >
+                      {loading ? "Checking..." : "Continue"}
+                    </button>
+                    <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#5c4a70" }}>
+                      <span onClick={backToLogin} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800 }}>
+                        ← Back to sign in
+                      </span>
+                    </div>
+                  </form>
+                </>
               ) : (
                 <>
-                  <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Set a new password</h2>
-                  <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
-                    Choose a password for this account. It's separate from any Google or GitHub password.
+                  <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Verify & set a new password</h2>
+                  <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 18 }}>
+                    Answer your security question, then choose a new password.
                   </p>
                   <form onSubmit={handleResetSubmit}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#241533",
+                        background: "#24153310",
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        marginBottom: 14,
+                      }}
+                    >
+                      {securityQuestion}
+                    </div>
+                    <FloatingInput label="Your answer" value={securityAnswer} onChange={setSecurityAnswer} type="text" />
                     <FloatingInput label="New password" value={newPassword} onChange={setNewPassword} type="password" />
                     <FloatingInput label="Confirm new password" value={newPasswordConfirm} onChange={setNewPasswordConfirm} type="password" />
                     {error && <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>}
@@ -472,52 +550,7 @@ export default function AuthPage({ onAuthenticated }) {
                         cursor: loading ? "default" : "pointer",
                       }}
                     >
-                      {loading ? "Please wait..." : "Update password"}
-                    </button>
-                  </form>
-                </>
-              )
-            ) : mode === "forgot" ? (
-              <>
-                <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#241533" }}>Reset your password</h2>
-                <p style={{ fontSize: 13, color: "#5c4a70", marginTop: 6, marginBottom: 22 }}>
-                  Enter your email and we'll send a link to set a new password.
-                </p>
-                {forgotSent ? (
-                  <div style={{ fontSize: 13, color: "#241533" }}>
-                    <p>If an account exists for <b>{email}</b>, a reset link is on its way.</p>
-                    {devResetLink && (
-                      <div style={{ marginTop: 10, padding: 12, borderRadius: 10, background: "#24153310", fontSize: 12 }}>
-                        <strong>Dev mode</strong> — no email provider is configured yet, so here's the link directly:
-                        <br />
-                        <a href={devResetLink} style={{ color: "#e0246e", wordBreak: "break-all" }}>{devResetLink}</a>
-                      </div>
-                    )}
-                    <span onClick={backToLogin} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800, display: "inline-block", marginTop: 14 }}>
-                      ← Back to sign in
-                    </span>
-                  </div>
-                ) : (
-                  <form onSubmit={handleForgotSubmit}>
-                    <FloatingInput label="Email" value={email} onChange={setEmail} type="email" />
-                    {error && <div style={{ color: "#e0245e", fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{error}</div>}
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="nexus-primary-btn"
-                      style={{
-                        width: "100%",
-                        padding: "13px 16px",
-                        borderRadius: 12,
-                        border: "none",
-                        background: "linear-gradient(135deg, #ff5fa2, #ffd166)",
-                        color: "#241533",
-                        fontWeight: 800,
-                        fontSize: 15,
-                        cursor: loading ? "default" : "pointer",
-                      }}
-                    >
-                      {loading ? "Please wait..." : "Send reset link"}
+                      {loading ? "Updating..." : "Update password"}
                     </button>
                     <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#5c4a70" }}>
                       <span onClick={backToLogin} style={{ color: "#e0246e", cursor: "pointer", fontWeight: 800 }}>
@@ -525,8 +558,8 @@ export default function AuthPage({ onAuthenticated }) {
                       </span>
                     </div>
                   </form>
-                )}
-              </>
+                </>
+              )
             ) : (
               <>
                 <h2
@@ -579,6 +612,38 @@ export default function AuthPage({ onAuthenticated }) {
                   )}
                   <FloatingInput label="Email" value={email} onChange={setEmail} type="email" />
                   <FloatingInput label="Password" value={password} onChange={setPassword} type="password" />
+
+                  {mode === "signup" && (
+                    <>
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 11.5, fontWeight: 700, color: "#5c4a70", display: "block", marginBottom: 6 }}>
+                          Security question (used to reset your password later — no email required)
+                        </label>
+                        <select
+                          value={securityQuestionChoice}
+                          onChange={(e) => setSecurityQuestionChoice(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "11px 12px",
+                            borderRadius: 10,
+                            border: "1px solid #24153322",
+                            background: "#ffffffcc",
+                            color: "#241533",
+                            fontFamily: "inherit",
+                            fontSize: 13.5,
+                            outline: "none",
+                          }}
+                        >
+                          {SECURITY_QUESTIONS.map((q) => (
+                            <option key={q} value={q}>
+                              {q}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <FloatingInput label="Your answer" value={securityAnswerSignup} onChange={setSecurityAnswerSignup} type="text" />
+                    </>
+                  )}
 
                   {mode === "login" && (
                     <div style={{ textAlign: "right", marginTop: -10, marginBottom: 16 }}>
