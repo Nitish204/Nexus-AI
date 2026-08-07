@@ -73,6 +73,11 @@ class User(SQLModel, table=True):
     provider: AuthProvider = AuthProvider.LOCAL
     avatar_url: str = ""
     created_at: datetime = utc_datetime_field()
+    # Security question is the only "forgot password" verification this
+    # app uses — there's no email/SMTP step. Answer is stored hashed,
+    # never in plaintext, same as password_hash.
+    security_question: str | None = None
+    security_answer_hash: str | None = None
 
 
 class Project(SQLModel, table=True):
