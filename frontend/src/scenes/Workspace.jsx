@@ -268,6 +268,28 @@ export default function Workspace({ projectId }) {
         .nexus-mic-btn:hover { filter: brightness(1.08); }
         .nexus-agent-node { transition: filter 0.3s ease, transform 0.3s ease; }
         .nexus-agent-node.active { filter: brightness(1.15); transform: scale(1.18); }
+        /* Mobile-only fix: the two floating panels overlap on narrow screens
+           since they're independently corner-anchored with no awareness of
+           each other's width. Below 640px, stack them in normal document
+           flow instead — height comes from real content, so they can never
+           collide regardless of how tall Analytics' content gets. Desktop
+           layout (the absolute corner positions above) is untouched. */
+        @media (max-width: 640px) {
+          .nexus-analytics-panel,
+          .nexus-editor-panel {
+            position: static !important;
+            top: auto !important;
+            left: auto !important;
+            right: auto !important;
+            width: calc(100% - 24px) !important;
+            max-width: none !important;
+            margin: 12px auto 0 !important;
+          }
+          .nexus-editor-panel {
+            height: 220px !important;
+            margin-top: 10px !important;
+          }
+        }
         @media (prefers-reduced-motion: reduce) {
           * { animation: none !important; transition: none !important; }
         }
@@ -408,9 +430,9 @@ export default function Workspace({ projectId }) {
           />
         </div>
 
-        {/* Analytics panel — floats top-left over the canvas only */}
+        {/* Analytics panel — floats top-left over the canvas only (desktop); stacks full-width on mobile via CSS below */}
         <div
-          className="nexus-glass"
+          className="nexus-glass nexus-analytics-panel"
           style={{
             position: "absolute",
             top: 12,
@@ -426,9 +448,9 @@ export default function Workspace({ projectId }) {
           <AnalyticsPanel projectId={projectId} deploymentStatus={deploymentStatus} files={fileList} />
         </div>
 
-        {/* Code editor — floats top-right over the canvas only, shrinks on mobile */}
+        {/* Code editor — floats top-right over the canvas only (desktop); stacks full-width below Analytics on mobile via CSS below */}
         <div
-          className="nexus-glass"
+          className="nexus-glass nexus-editor-panel"
           style={{
             position: "absolute",
             top: 12,
