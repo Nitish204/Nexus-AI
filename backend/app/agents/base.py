@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import json
 import logging
 
+from json_repair import repair_json
 from openai import AsyncOpenAI, APIStatusError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
@@ -26,6 +28,30 @@ from app.db.models import AgentMessage, AgentRole, GeneratedFile, Task, TaskStat
 
 settings = get_settings()
 logger = logging.getLogger("nexus.agents")
+
+
+def parse_agent_json(raw_text: str) -> dict:
+    """
+    Every agent asks the LLM for strict JSON (files + notes), but LLMs
+    routinely produce near-JSON instead: an unescaped literal newline or
+    quote inside a string value is enough to break a bare json.loads()
+    outright — and that's overwhelmingly common here specifically
+    because the string values ARE multi-line source code. A single bad
+    escape used to fail the whole task instantly with no recovery
+    attempt (e.g. "Unterminated string starting at: line 6 column 18"),
+    silently ending the entire run since nothing downstream could become
+    runnable. Strict parsing is tried first — cheap and exact for the
+    common case — and json_repair (which specifically knows how to
+    recover unterminated strings/braces and similar near-miss JSON) is
+    only used as a fallback, so well-formed responses are never altered.
+    """
+    cleaned = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        logger.warning("Strict JSON parse failed (%s), attempting repair...", exc)
+        repaired = repair_json(cleaned)
+        return json.loads(repaired)
 
 
 class AgentBase(abc.ABC):
