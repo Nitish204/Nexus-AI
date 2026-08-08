@@ -2,9 +2,8 @@
 flags issues in plain review comments. Test execution itself happens in
 the sandbox service (Phase 3), not here — this agent's job is authoring
 tests and code review, not running arbitrary code."""
-import json
 
-from app.agents.base import AgentBase
+from app.agents.base import AgentBase, parse_agent_json
 from app.db.models import AgentRole, GeneratedFile, Task
 
 QA_SYSTEM_PROMPT = """You are the QA Engineer agent inside NEXUS. Given the
@@ -31,8 +30,7 @@ class QAEngineerAgent(AgentBase):
         return f"Task: {task.title}\n{task.description}\n\nProject files to test/review:\n{context}"
 
     async def handle_response(self, task: Task, raw_text: str) -> None:
-        cleaned = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        data = json.loads(cleaned)
+        data = parse_agent_json(raw_text)
         for f in data["files"]:
             self.session.add(GeneratedFile(
                 project_id=task.project_id, path=f["path"], content=f["content"],
