@@ -146,11 +146,28 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
   const deleteProject = async (p, e) => {
     e.stopPropagation();
     if (!window.confirm(`Delete "${p.name || "this project"}"? This can't be undone.`)) return;
+    // Snapshot for rollback — fetch() resolves normally even on 401/404/500,
+    // it only rejects on true network failures, so the HTTP status has to
+    // be checked explicitly or a failed delete goes unnoticed: the project
+    // vanishes from the UI immediately (optimistic removal below) but
+    // reappears on the next 15s background poll since it was never
+    // actually deleted server-side.
+    const previous = projects;
     setProjects((prev) => prev.filter((x) => x.id !== p.id));
-    await fetch(`${API_BASE}/api/projects/${p.id}`, {
-      method: "DELETE",
-      headers: authHeaders(),
-    }).catch(() => loadProjects());
+    try {
+      const res = await fetch(`${API_BASE}/api/projects/${p.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Delete failed (${res.status}).`);
+      }
+    } catch (err) {
+      setProjects(previous);
+      window.alert(`Couldn't delete "${p.name || "this project"}": ${err.message}`);
+      return;
+    }
     if (p.id === currentProjectId) {
       const url = new URL(window.location.href);
       url.searchParams.delete("project");
