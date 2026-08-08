@@ -4,9 +4,10 @@ from pydantic import BaseModel
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.security import decode_access_token
-from app.db.models import AnalysisResult, GeneratedFile, GraphEdge, Project, Task, Deployment
+from app.db.models import AgentMessage, AnalysisResult, GeneratedFile, GraphEdge, Project, Task, Deployment
 from app.db.session import get_session, get_session_context
 from app.services.orchestrator import Orchestrator
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -104,14 +105,40 @@ async def delete_project(
     user_id: str = Depends(get_current_user_id),
 ):
     project = await get_owned_project(project_id, session, user_id)
-    # Clean up dependent rows first — no cascade configured at the DB
+
+    # AgentMessage has a foreign key to task.id (not project_id directly),
+    # so it has to be cleared out BEFORE the Task rows it references are
+    # deleted below — deleting a Task that still has AgentMessage rows
+    # pointing at it violates the FK constraint in Postgres, which was
+    # silently crashing this whole endpoint for any project that had ever
+    # actually run (i.e. had agent activity logged).
+    task_ids = (await session.exec(select(Task.id).where(Task.project_id == project_id))).all()
+    if task_ids:
+        messages = await session.exec(select(AgentMessage).where(AgentMessage.task_id.in_(task_ids)))
+        for msg in messages.all():
+            await session.delete(msg)
+
+    # Clean up remaining dependent rows — no cascade configured at the DB
     # level, so orphaned rows would otherwise be left behind silently.
     for model in (GeneratedFile, Task, Deployment, GraphEdge, AnalysisResult):
         result = await session.exec(select(model).where(model.project_id == project_id))
         for row in result.all():
             await session.delete(row)
     await session.delete(project)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Belt-and-braces: if some other dependent row we don't know
+        # about yet still references this project, fail cleanly with a
+        # real HTTP error instead of letting the exception propagate
+        # unhandled — which is what silently broke the connection
+        # before (surfacing to the browser as a bare "Failed to fetch").
+        await session.rollback()
+        raise HTTPException(
+            409,
+            "Couldn't delete this project — some related data is still linked to it. "
+            "Please try again or contact support if this persists.",
+        )
     return {"status": "deleted", "project_id": project_id}
 
 
