@@ -3,9 +3,8 @@ BackendEngineerAgent — generates server-side code (APIs, models, auth,
 DB migrations) as structured files, output as JSON so the live code
 editor can render each file individually as it streams in.
 """
-import json
 
-from app.agents.base import AgentBase
+from app.agents.base import AgentBase, parse_agent_json
 from app.db.models import AgentRole, GeneratedFile, Task
 
 BACKEND_SYSTEM_PROMPT = """You are the Backend Engineer agent inside NEXUS.
@@ -35,8 +34,7 @@ class BackendEngineerAgent(AgentBase):
         return f"Task: {task.title}\n{task.description}\n\nExisting project files:\n{context}"
 
     async def handle_response(self, task: Task, raw_text: str) -> None:
-        cleaned = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        data = json.loads(cleaned)
+        data = parse_agent_json(raw_text)
 
         for f in data["files"]:
             gen_file = GeneratedFile(
