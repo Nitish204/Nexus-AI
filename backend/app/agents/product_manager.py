@@ -6,11 +6,10 @@ authentication system with JWT and PostgreSQL") and decomposes it into
 concrete Task rows assigned to the right engineering agents, with
 dependency ordering so e.g. frontend work waits on the backend API.
 """
-import json
 
 from sqlmodel import select
 
-from app.agents.base import AgentBase
+from app.agents.base import AgentBase, parse_agent_json
 from app.db.models import AgentRole, Task, TaskStatus
 
 PM_SYSTEM_PROMPT = """You are the Product Manager agent inside NEXUS, an
@@ -57,8 +56,7 @@ class ProductManagerAgent(AgentBase):
         return f"Feature request:\n{task.description}\n\nExisting project context:\n{context}"
 
     async def handle_response(self, task: Task, raw_text: str) -> None:
-        cleaned = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        data = json.loads(cleaned)
+        data = parse_agent_json(raw_text)
 
         title_to_id: dict[str, str] = {}
         created: list[Task] = []
