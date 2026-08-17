@@ -1,373 +1,298 @@
-# 🚀 NEXUS — Autonomous AI Developer Workspace
+<div align="center">
 
-> **A next-generation multi-agent AI software engineering platform that transforms a single prompt into production-ready applications through autonomous collaboration.**
+# NEXUS
 
----
+**Autonomous multi-agent software engineering, orchestrated.**
 
-## 🌟 Overview
+A single prompt in. A production-ready application out — planned, built, tested, analyzed, and deployed by a coordinated team of AI agents.
 
-NEXUS is an AI-powered autonomous software development workspace where multiple specialized AI agents collaborate like a real engineering team.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-Frontend-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Sandboxed-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
-Instead of relying on a single AI model, NEXUS coordinates multiple intelligent agents—each with a dedicated responsibility—to plan, develop, test, analyze, and deploy complete software projects.
+[Overview](#overview) · [Architecture](#architecture) · [Agent Team](#agent-team) · [Quick Start](#quick-start) · [Roadmap](#roadmap)
 
-The entire workflow is visualized inside an immersive 3D workspace where users can watch AI agents collaborate in real time.
-
----
-
-# ✨ Features
-
-- 🤖 Multi-Agent AI Collaboration
-- 🌐 Real-time WebSocket Communication
-- 🧠 Intelligent Task Orchestration
-- 📂 Shared Blackboard Memory
-- 📊 Static Code Analysis
-- 🧪 Automated QA Validation
-- 🐳 Docker Sandbox Execution
-- 🚀 One-click Deployment
-- 🎙️ Voice Command Support
-- 🌌 Interactive 3D Workspace
-- 📈 Live Project Analytics
-- ⚡ Concurrent Task Execution
+</div>
 
 ---
 
-# 👥 AI Agent Team
+## Overview
 
-| Agent | Responsibility |
-|--------|----------------|
-| 🟧 Product Manager | Understands user requirements and breaks projects into tasks |
-| 🔵 Backend Engineer | Develops APIs, databases, authentication, and business logic |
-| 🟣 Frontend Engineer | Builds responsive user interfaces and frontend architecture |
-| 🟢 QA Engineer | Validates generated code and performs automated testing |
-| 🟡 DevOps Engineer | Handles deployment, Docker, infrastructure, and CI/CD |
+Most AI coding tools are a single model doing everything — planning, writing, testing, and shipping in one undifferentiated pass. **NEXUS takes a different approach.**
 
-Each agent works independently while communicating through a shared project memory, enabling parallel development and intelligent collaboration.
+It coordinates a team of specialized AI agents — a Product Manager, Backend Engineer, Frontend Engineer, QA Engineer, and DevOps Engineer — that plan, build, validate, and ship software the way a real engineering team does: in parallel, through shared context, with checks at every stage.
 
----
-
-# 🏗️ Architecture
+Every task, message, file, and decision flows through a shared blackboard memory, and the entire process streams live over WebSockets into an interactive 3D workspace — so instead of staring at a spinner, you *watch your software get built*.
 
 ```
-                  User Prompt
-                       │
-                       ▼
-             Product Manager Agent
-                       │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
- Backend Agent   Frontend Agent    QA Agent
-        │              │              │
-        └──────────────┼──────────────┘
-                       ▼
-                DevOps Agent
-                       │
-                Deployment Pipeline
-                       │
-                       ▼
-              Production Application
+"Build a Django authentication system using JWT and PostgreSQL."
 ```
+
+That's the input. NEXUS handles decomposition, implementation, static analysis, sandboxed testing, and deployment prep — autonomously.
 
 ---
 
-# 🚀 Current Capabilities
+## Why NEXUS
 
-### ✅ Multi-Agent Orchestration
+| | |
+|---|---|
+| 🧠 **Real division of labor** | Specialized agents instead of one model wearing every hat |
+| 🔄 **Parallel, not sequential** | Independent agents work concurrently on backend, frontend, and QA |
+| 🗂️ **Shared memory, not lost context** | A blackboard architecture keeps every agent aligned on project state |
+| 🧪 **Trust but verify** | Generated code runs in an isolated Docker sandbox before it ships |
+| 📊 **Quality, measured** | Ruff, Bandit, and Radon score every artifact for style, security, and complexity |
+| 👁️ **Full transparency** | Live WebSocket streaming into a 3D visualization — nothing happens in a black box |
 
+---
+
+## Architecture
+
+```
+                         User Prompt
+                              │
+                              ▼
+                   ┌─────────────────────┐
+                   │  Product Manager    │
+                   │  Agent               │
+                   │  (task decomposition)│
+                   └──────────┬──────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+      ┌───────────────┐ ┌───────────┐ ┌───────────────┐
+      │ Backend Agent  │ │ Frontend  │ │   QA Agent     │
+      │ APIs · Auth ·  │ │  Agent    │ │  Validation ·  │
+      │ DB · Logic     │ │  UI · UX  │ │  Test coverage │
+      └───────┬────────┘ └─────┬─────┘ └───────┬────────┘
+              │                │                │
+              └────────────────┼────────────────┘
+                                ▼
+                   ┌─────────────────────┐
+                   │   Shared Blackboard  │
+                   │  (projects · tasks · │
+                   │  files · knowledge)  │
+                   └──────────┬──────────┘
+                                ▼
+                   ┌─────────────────────┐
+                   │   DevOps Agent        │
+                   │  Docker · Sandbox ·   │
+                   │  Deployment           │
+                   └──────────┬──────────┘
+                                ▼
+                     Production Application
+```
+
+Agents don't just execute in sequence — they read and write to a shared knowledge graph, so a decision the Backend Agent makes about a data model is immediately visible to the Frontend and QA agents building against it.
+
+---
+
+## Agent Team
+
+| Agent | Role | Responsibility |
+|:-----:|------|-----------------|
+| 🟧 | **Product Manager** | Interprets requirements, breaks the project into a coordinated task graph |
+| 🔵 | **Backend Engineer** | Builds APIs, database schemas, authentication, and business logic |
+| 🟣 | **Frontend Engineer** | Builds responsive UI and frontend architecture |
+| 🟢 | **QA Engineer** | Validates generated code and runs automated tests |
+| 🟡 | **DevOps Engineer** | Handles Docker sandboxing, CI/CD, and deployment |
+
+Each agent operates independently but communicates constantly through shared project memory — enabling genuine parallel development instead of a sequential pipeline pretending to be one.
+
+---
+
+## Feature Highlights
+
+<table>
+<tr>
+<td width="50%">
+
+**🧠 Orchestration**
 - Intelligent task decomposition
-- Parallel execution
-- Dependency management
-- Shared communication layer
+- Dependency-aware scheduling
+- Concurrent multi-agent execution
+- Shared blackboard memory + knowledge graph
+
+**📊 Code Quality**
+- Static analysis via Ruff
+- Security scanning via Bandit
+- Complexity metrics via Radon
+
+</td>
+<td width="50%">
+
+**🧪 Safety**
+- Isolated Docker sandbox execution
+- Automated retry on failure
+- Structured error feedback loop
+
+**🌐 Experience**
+- Real-time WebSocket event streaming
+- Interactive 3D workspace (React Three Fiber)
+- Native voice command support
+- Live project analytics dashboard
+
+</td>
+</tr>
+</table>
 
 ---
 
-### 🌐 Real-Time Collaboration
+## Tech Stack
 
-- FastAPI backend
-- WebSocket event streaming
-- Live agent status updates
-- Real-time project monitoring
+<table>
+<tr>
+<td valign="top" width="25%">
 
----
-
-### 📦 Shared Blackboard Database
-
-Stores:
-
-- Projects
-- Tasks
-- Generated Files
-- Agent Messages
-- Analysis Reports
-- Deployment Information
-- Knowledge Graph
-
----
-
-### 📊 Static Code Analysis
-
-Integrated tools:
-
-- Ruff
-- Bandit
-- Radon
-
-Provides:
-
-- Code complexity
-- Security analysis
-- Code quality metrics
-
----
-
-### 🧪 Docker Sandbox
-
-Safely executes generated code inside isolated containers before deployment.
-
-Features:
-
-- Automated retries
-- Failure detection
-- Error feedback loop
-- Secure execution environment
-
----
-
-### 🚀 Deployment
-
-Supports:
-
-- Local Docker deployment
-- Render deployment (API integration)
-
----
-
-### 🎙️ Voice Commands
-
-Native browser speech recognition enables users to control NEXUS using voice.
-
----
-
-### 🌌 3D Workspace
-
-Built using React Three Fiber.
-
-Includes:
-
-- Interactive AI agent nodes
-- Floating code editor
-- Analytics dashboard
-- Real-time animations
-- Command center
-
----
-
-# 🛠️ Technology Stack
-
-## Backend
-
+**Backend**
 - FastAPI
 - SQLAlchemy
 - PostgreSQL
 - Redis
 - WebSockets
-- Python
 
----
+</td>
+<td valign="top" width="25%">
 
-## Frontend
-
-- React
+**Frontend**
+- React + Vite
 - React Three Fiber
 - Three.js
-- Vite
 - Monaco Editor
 
----
+</td>
+<td valign="top" width="25%">
 
-## AI
-
+**AI**
 - Claude API
-- Multi-Agent Architecture
-- Prompt Orchestration
+- Multi-agent orchestration
+- Prompt engineering pipeline
 
----
+</td>
+<td valign="top" width="25%">
 
-## DevOps
-
+**Infrastructure**
 - Docker
 - Render
 - Gunicorn
 
----
-
-# 📂 Project Structure
-
-```
-NEXUS
-│
-├── backend/
-│   ├── app/
-│   ├── agents/
-│   ├── db/
-│   ├── services/
-│   └── sandbox/
-│
-├── frontend/
-│   ├── src/
-│   ├── scenes/
-│   ├── hooks/
-│   └── components/
-│
-├── infra/
-│
-└── README.md
-```
+</td>
+</tr>
+</table>
 
 ---
 
-# ⚙️ Installation
+## Quick Start
 
-## 1. Clone Repository
+### 1 · Clone
 
 ```bash
 git clone https://github.com/your-username/NEXUS.git
-
 cd NEXUS
 ```
 
----
-
-## 2. Backend Setup
+### 2 · Backend
 
 ```bash
 cd backend
-
 cp .env.example .env
-
 pip install -r requirements.txt
-
 uvicorn app.main:app --reload
 ```
 
----
-
-## 3. Frontend Setup
+### 3 · Frontend
 
 ```bash
 cd frontend
-
 npm install
-
 npm run dev
 ```
 
----
-
-## 4. Start Database
-
-Use Docker Compose:
+### 4 · Database
 
 ```bash
 docker compose up
 ```
 
----
-
-# 🚀 Example Workflow
-
-Create a project:
+### 5 · Ship something
 
 ```bash
 curl -X POST localhost:8000/api/projects \
--H "Content-Type: application/json" \
--d '{"name":"Authentication System"}'
+  -H "Content-Type: application/json" \
+  -d '{"name": "Authentication System"}'
 ```
 
-Open
-
-```
-http://localhost:5173
-```
-
-Enter a prompt like:
-
-> Build a Django authentication system using JWT and PostgreSQL.
-
-Watch the AI agents collaborate, generate code, validate it, analyze quality, and prepare it for deployment.
+Open `http://localhost:5173`, describe what you want to build, and watch the agents get to work.
 
 ---
 
-# 🗺️ Development Roadmap
-
-| Phase | Status |
-|----------|---------|
-| Foundation | ✅ Completed |
-| Multi-Agent Collaboration | ✅ Completed |
-| Docker Sandbox | ✅ Completed |
-| Knowledge Graph | ✅ Completed |
-| Deployment Engine | ✅ Completed |
-| Static Code Analysis | ✅ Completed |
-| Voice Commands | ✅ Completed |
-| Interactive 3D Visualization | 🚧 In Progress |
-
----
-
-# 📸 Screenshots
-
-> Add screenshots or GIF demonstrations here.
-
-Example:
+## Project Structure
 
 ```
-/assets/dashboard.png
-/assets/agents.gif
-/assets/workspace.png
+NEXUS
+├── backend/
+│   ├── app/          # FastAPI application
+│   ├── agents/        # Agent definitions & orchestration logic
+│   ├── db/            # SQLAlchemy models & migrations
+│   ├── services/       # Shared business logic
+│   └── sandbox/        # Docker sandbox execution
+│
+├── frontend/
+│   ├── src/
+│   ├── scenes/         # React Three Fiber scenes
+│   ├── hooks/
+│   └── components/
+│
+├── infra/               # Deployment & infrastructure configs
+└── README.md
 ```
 
 ---
 
-# 🤝 Contributing
+## Roadmap
 
-Contributions are welcome!
+| Milestone | Status |
+|---|:---:|
+| Core orchestration foundation | ✅ |
+| Multi-agent collaboration | ✅ |
+| Docker sandbox execution | ✅ |
+| Shared knowledge graph | ✅ |
+| Deployment engine | ✅ |
+| Static code analysis | ✅ |
+| Voice commands | ✅ |
+| Interactive 3D visualization | 🚧 |
+| Local LLM support | ⬜ |
+| GitHub repo generation | ⬜ |
+| AI-assisted code review | ⬜ |
+| Plugin marketplace | ⬜ |
+| Kubernetes deployment | ⬜ |
+| Mobile companion app | ⬜ |
+
+---
+
+## Contributing
+
+Contributions are genuinely welcome — this is early-stage and there's a lot of room to shape it.
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/your-idea`)
 3. Commit your changes
-4. Push to your branch
-5. Open a Pull Request
+4. Push and open a Pull Request
 
 ---
 
-# 💡 Future Improvements
+## License
 
-- Local LLM support
-- Multi-language code generation
-- GitHub repository generation
-- Cloud deployment automation
-- AI code review
-- Plugin marketplace
-- Team collaboration
-- Kubernetes deployment
-- Mobile companion app
+Released under the [MIT License](LICENSE).
 
 ---
 
-# 📄 License
+<div align="center">
 
-This project is licensed under the MIT License.
+**If NEXUS is useful to you, a ⭐ helps others find it.**
 
----
+Built by **Vishwakarma Nitish**
 
-# ⭐ Support
-
-If you found this project useful, please consider giving it a ⭐ on GitHub.
-
-It helps others discover the project and motivates future development.
-
----
-
-## 👨‍💻 Author
-
-Vishwakarma Nitish
-
-Built with ❤️ using AI, FastAPI, React, Three.js, and modern software engineering practices.
+</div>
