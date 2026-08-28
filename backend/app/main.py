@@ -10,16 +10,10 @@ import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import analytics, auth, deploy, graph, projects, ws
+from app.api import analytics, auth, code_review, deploy, github_export, graph, plugins, projects, ws
 from app.core.config import get_settings
 from app.db.session import init_db
 
-# Without this, Python's root logger defaults to WARNING with no
-# configured handler, meaning every logger.info() call added throughout
-# app/agents and app/services would be silently dropped — nothing
-# server-side would ever be visible in Render's logs beyond uvicorn's
-# own request access lines. This makes the "nexus.*" loggers (and
-# anything else) actually reach stdout, which Render captures.
 logging.basicConfig(
     level=logging.INFO,
     stream=sys.stdout,
@@ -51,6 +45,9 @@ app.include_router(analytics.router)
 app.include_router(graph.router)
 app.include_router(deploy.router)
 app.include_router(ws.router)
+app.include_router(github_export.router)
+app.include_router(code_review.router)
+app.include_router(plugins.router)
 
 
 @app.get("/health")
