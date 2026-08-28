@@ -32,20 +32,22 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM — Groq (OpenAI-compatible API, free-tier friendly)
-    # IMPORTANT: Groq's free tier for openai/gpt-oss-120b caps at 8,000
-    # tokens PER MINUTE (input + output combined), shared across every
-    # call in an orchestration run. A single agent call requesting close
-    # to that ceiling can exhaust the entire per-minute budget by
-    # itself, causing every subsequent agent (Backend, Frontend, QA,
-    # DevOps) in the same run to fail with a 429 rate-limit error —
-    # which looks exactly like "generation just stops after Product
-    # Management." 3000 leaves realistic headroom for the input prompt
-    # + output within one call while still fitting multiple agent calls
-    # inside a single TPM window. If you upgrade to Groq's paid
-    # Developer tier (much higher TPM), this can be raised significantly.
     groq_api_key: str = ""
     agent_model: str = "openai/gpt-oss-120b"
     max_tokens_per_agent_call: int = 2000
+
+    # LLM provider switch — "groq" (cloud, default) or "local" (any
+    # OpenAI-compatible local server: Ollama, LM Studio, vLLM, llama.cpp
+    # server). Local mode needs no API key and never leaves the machine.
+    llm_provider: str = "groq"  # groq | local
+    local_llm_base_url: str = "http://localhost:11434/v1"  # Ollama's default OpenAI-compatible endpoint
+    local_llm_model: str = "llama3.1"
+
+    # GitHub repo export
+    github_export_token: str = ""  # a GitHub PAT with 'repo' scope, used server-side to create/push repos
+
+    # Plugin marketplace
+    plugins_registry_path: str = "app/plugins/registry.json"
 
     # Sandbox
     docker_image_python: str = "python:3.12-slim"
@@ -57,11 +59,6 @@ class Settings(BaseSettings):
     render_api_key: str = ""
 
     # CORS — kept as a plain string on purpose.
-    # pydantic-settings tries to JSON-decode any list/dict-typed field
-    # straight from the raw env var, BEFORE any validator runs, which
-    # crashes on plain comma-separated strings. Keeping this as `str`
-    # sidesteps that entirely; use `allowed_origins_list` below instead
-    # of this field directly.
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
     @property
