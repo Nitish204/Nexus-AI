@@ -1,18 +1,7 @@
 """
 NEXUS — Deployment service (Phase 5).
 
-Turns a project's generated files into a live URL with one call. Two
-concerns kept separate on purpose:
-
-1. `_materialize_project` — writes the virtual file tree (GeneratedFile
-   rows) to a real temp directory and builds a local Docker image, using
-   the Dockerfile the DevOps agent already produced.
-2. Provider adapters — push that image / repo somewhere that runs it.
-
-Only a Render adapter is implemented end-to-end (simplest REST API, free
-tier, no cloud credentials beyond one API key). AWS/Fly adapters are
-stubbed with the same interface so swapping `DEPLOY_PROVIDER` later is a
-one-line config change, not a rewrite.
+Turns a project's generated files into a live URL with one call.
 """
 from __future__ import annotations
 
@@ -32,9 +21,6 @@ settings = get_settings()
 
 
 def _materialize_project(files: list[GeneratedFile]) -> Path:
-    """Writes the virtual file tree to a real temp directory so it can
-    be built/pushed by a provider's CLI or API. Nothing here touches the
-    host outside this throwaway directory."""
     root = Path(tempfile.mkdtemp(prefix="nexus-deploy-"))
     for f in files:
         target = root / f.path
@@ -50,12 +36,6 @@ class DeployProvider(abc.ABC):
 
 
 class RenderProvider(DeployProvider):
-    """Uses Render's REST API to create/update a web service from a
-    Dockerfile-based deploy. Requires RENDER_API_KEY + an existing
-    Render account connected to a git remote in production use; for
-    the local/demo path this simulates the call structure so the
-    orchestration logic is provably correct even without live credentials.
-    """
     API_BASE = "https://api.render.com/v1"
 
     def __init__(self, api_key: str = ""):
@@ -76,10 +56,6 @@ class RenderProvider(DeployProvider):
         try:
             async with httpx.AsyncClient(base_url=self.API_BASE, timeout=30) as client:
                 client.headers["Authorization"] = f"Bearer {self.api_key}"
-                # Real Render deploys are git-based; a from-scratch source
-                # push requires their newer image-deploy API. This call
-                # shape matches their documented service-create endpoint
-                # so swapping in a real repo URL is a one-line change.
                 resp = await client.post(
                     "/services",
                     json={
@@ -101,26 +77,12 @@ class RenderProvider(DeployProvider):
 
 
 class LocalDockerProvider(DeployProvider):
-    """Fallback provider — builds the image locally and reports how to
-    run it. Useful for the demo path and for anyone without cloud
-    credentials configured yet. This does NOT expose a public URL: it
-    builds an image on the same machine running the NEXUS backend and
-    hands back the `docker run` command to start it yourself."""
-
     def __init__(self, api_key: str = ""):
-        # Not used locally, but accepted so both providers share the
-        # same constructor signature and can be called uniformly.
         self.api_key = api_key
 
     async def deploy(self, project_root: Path, deployment: Deployment) -> Deployment:
         dockerfile = project_root / "Dockerfile"
         if not dockerfile.exists():
-            # Same check RenderProvider does, applied here too — without
-            # it, `docker.images.build` fails with an opaque low-level
-            # error ("Dockerfile not found") instead of telling the
-            # person the actual fix: ask for deployment/hosting/Docker
-            # explicitly so the DevOps agent's task actually runs and
-            # produces one.
             deployment.status = "failed"
             deployment.log = (
                 "No Dockerfile found in this project. The DevOps agent only runs "
@@ -138,11 +100,6 @@ class LocalDockerProvider(DeployProvider):
                 client = docker_sdk.from_env()
                 client.ping()
             except DockerException as exc:
-                # The far more common failure than a build error: no
-                # Docker daemon reachable on the machine running the
-                # backend at all (nothing installed, or the daemon isn't
-                # running). Previously this fell through to the generic
-                # except below with a raw SDK traceback string.
                 deployment.status = "failed"
                 deployment.log = (
                     "Couldn't reach a Docker daemon on the server running NEXUS "
@@ -165,9 +122,87 @@ class LocalDockerProvider(DeployProvider):
             deployment.log = f"Local build error: {exc}"
         return deployment
 
+
+class KubernetesProvider(DeployProvider):
+    """Generates Deployment + Service manifests from the project's
+    Dockerfile-based image and applies them via the local kubeconfig
+    (in-cluster config if running inside a pod, otherwise ~/.kube/config).
+    Requires the `kubernetes` python client and an image already pushed
+    to a registry the cluster can pull from (this builds and tags it
+    locally; pushing to a registry is left to CI in real use, since that
+    step is registry-specific — ECR/GCR/Docker Hub all differ)."""
+
+    def __init__(self, api_key: str = ""):
+        self.api_key = api_key  # unused; kept for interface parity
+
+    async def deploy(self, project_root: Path, deployment: Deployment) -> Deployment:
+        dockerfile = project_root / "Dockerfile"
+        if not dockerfile.exists():
+            deployment.status = "failed"
+            deployment.log = "No Dockerfile found — the DevOps agent task must run before deployment."
+            return deployment
+
+        try:
+            from kubernetes import client as k8s_client, config as k8s_config
+            try:
+                k8s_config.load_incluster_config()
+            except Exception:
+                k8s_config.load_kube_config()
+
+            name = f"nexus-{deployment.project_id[:8]}"
+            image_tag = f"{name}:latest"
+
+            import docker as docker_sdk
+            docker_client = docker_sdk.from_env()
+            docker_client.images.build(path=str(project_root), tag=image_tag, rm=True)
+
+            apps_api = k8s_client.AppsV1Api()
+            core_api = k8s_client.CoreV1Api()
+
+            deployment_manifest = k8s_client.V1Deployment(
+                metadata=k8s_client.V1ObjectMeta(name=name, labels={"app": name}),
+                spec=k8s_client.V1DeploymentSpec(
+                    replicas=1,
+                    selector=k8s_client.V1LabelSelector(match_labels={"app": name}),
+                    template=k8s_client.V1PodTemplateSpec(
+                        metadata=k8s_client.V1ObjectMeta(labels={"app": name}),
+                        spec=k8s_client.V1PodSpec(containers=[
+                            k8s_client.V1Container(
+                                name=name, image=image_tag,
+                                ports=[k8s_client.V1ContainerPort(container_port=8000)],
+                            )
+                        ]),
+                    ),
+                ),
+            )
+            apps_api.create_namespaced_deployment(namespace="default", body=deployment_manifest)
+
+            service_manifest = k8s_client.V1Service(
+                metadata=k8s_client.V1ObjectMeta(name=f"{name}-svc"),
+                spec=k8s_client.V1ServiceSpec(
+                    selector={"app": name},
+                    ports=[k8s_client.V1ServicePort(port=80, target_port=8000)],
+                    type="LoadBalancer",
+                ),
+            )
+            core_api.create_namespaced_service(namespace="default", body=service_manifest)
+
+            deployment.status = "live"
+            deployment.url = f"k8s://service/{name}-svc (check `kubectl get svc {name}-svc` for the external IP)"
+            deployment.log = f"Applied Deployment '{name}' and Service '{name}-svc' to the 'default' namespace."
+        except ImportError:
+            deployment.status = "failed"
+            deployment.log = "The 'kubernetes' python package isn't installed — add it to requirements.txt."
+        except Exception as exc:  # noqa: BLE001
+            deployment.status = "failed"
+            deployment.log = f"Kubernetes deploy error: {exc}"
+        return deployment
+
+
 PROVIDERS: dict[str, type[DeployProvider]] = {
     "render": RenderProvider,
     "local": LocalDockerProvider,
+    "kubernetes": KubernetesProvider,
 }
 
 
