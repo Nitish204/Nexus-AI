@@ -33,17 +33,8 @@ logger = logging.getLogger("nexus.agents")
 def parse_agent_json(raw_text: str) -> dict:
     """
     Every agent asks the LLM for strict JSON (files + notes), but LLMs
-    routinely produce near-JSON instead: an unescaped literal newline or
-    quote inside a string value is enough to break a bare json.loads()
-    outright — and that's overwhelmingly common here specifically
-    because the string values ARE multi-line source code. A single bad
-    escape used to fail the whole task instantly with no recovery
-    attempt (e.g. "Unterminated string starting at: line 6 column 18"),
-    silently ending the entire run since nothing downstream could become
-    runnable. Strict parsing is tried first — cheap and exact for the
-    common case — and json_repair (which specifically knows how to
-    recover unterminated strings/braces and similar near-miss JSON) is
-    only used as a fallback, so well-formed responses are never altered.
+    routinely produce near-JSON instead. Strict parsing is tried first,
+    and json_repair is only used as a fallback.
     """
     cleaned = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     try:
@@ -60,20 +51,24 @@ class AgentBase(abc.ABC):
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        # Groq exposes an OpenAI-compatible endpoint, so the standard
-        # openai SDK works unchanged — just point base_url at Groq and
-        # use a Groq API key instead of an OpenAI one.
-        # Explicit timeout: the SDK's default can be up to 10 minutes,
-        # which means a hung network call would sit completely silent
-        # (no error, no log, nothing) for a very long time before ever
-        # surfacing as a failure. 45s is generous for Groq (typically
-        # sub-second to a few seconds) while still failing fast enough
-        # to be diagnosable.
-        self.client = AsyncOpenAI(
-            api_key=settings.groq_api_key,
-            base_url="https://api.groq.com/openai/v1",
-            timeout=45.0,
-        )
+        # Provider switch: "local" points the same OpenAI-compatible
+        # client at a local server (Ollama/LM Studio/vLLM) instead of
+        # Groq — no code path changes, no API key needed, nothing
+        # leaves the machine. Falls back to Groq if misconfigured.
+        if settings.llm_provider == "local":
+            self.client = AsyncOpenAI(
+                api_key="local-llm-no-key-required",
+                base_url=settings.local_llm_base_url,
+                timeout=120.0,  # local inference is slower than a cloud API, especially on CPU
+            )
+            self.model_name = settings.local_llm_model
+        else:
+            self.client = AsyncOpenAI(
+                api_key=settings.groq_api_key,
+                base_url="https://api.groq.com/openai/v1",
+                timeout=45.0,
+            )
+            self.model_name = settings.agent_model
 
     # ---- to be implemented by each concrete agent ----
     @abc.abstractmethod
@@ -123,10 +118,10 @@ class AgentBase(abc.ABC):
         max_rate_limit_retries = 1
         for attempt in range(max_rate_limit_retries + 1):
             try:
-                logger.info("[%s] task=%s calling model=%s (attempt %d)", self.role.value, task.id, settings.agent_model, attempt + 1)
+                logger.info("[%s] task=%s calling model=%s (attempt %d)", self.role.value, task.id, self.model_name, attempt + 1)
                 full_text = ""
                 stream = await self.client.chat.completions.create(
-                    model=settings.agent_model,
+                    model=self.model_name,
                     max_tokens=settings.max_tokens_per_agent_call,
                     messages=[
                         {"role": "system", "content": self.system_prompt},
@@ -148,15 +143,9 @@ class AgentBase(abc.ABC):
                 logger.info("[%s] task=%s LLM call complete, %d chars received", self.role.value, task.id, len(full_text))
 
                 if not full_text.strip():
-                    # A real failure mode worth naming explicitly: the
-                    # call succeeded (no exception) but returned nothing
-                    # — e.g. a model name that's silently invalid/
-                    # deprecated on Groq's side, or the request being
-                    # rejected in a way that doesn't raise. Without this
-                    # check it looks identical to a hang from outside.
                     raise ValueError(
-                        f"Model '{settings.agent_model}' returned an empty response. "
-                        "Verify this model name is still valid at console.groq.com/docs/models."
+                        f"Model '{self.model_name}' returned an empty response. "
+                        "Verify this model name is still valid for your configured provider."
                     )
 
                 await self.handle_response(task, full_text)
@@ -166,45 +155,24 @@ class AgentBase(abc.ABC):
                 break  # success — leave the retry loop
 
             except APIStatusError as exc:
-                # Groq returns TWO different status codes for what is
-                # functionally the same condition — a shared per-minute
-                # token budget (8,000 on the free tier) being exceeded:
-                #   429 Too Many Requests — budget already used up by
-                #       prior calls this minute (handled by the openai
-                #       SDK's own built-in retry already, usually)
-                #   413 Payload Too Large — THIS single request's own
-                #       size (prompt + max_tokens) already exceeds the
-                #       per-minute cap outright, rejected immediately
-                #       with zero retries from the SDK
-                # Previously only 429 (via the narrower RateLimitError)
-                # was caught here — a 413 fell through to the generic
-                # handler below and failed instantly with no retry,
-                # which is exactly what happened on this PM task.
                 if exc.status_code in (429, 413):
                     logger.warning(
-                        "[%s] task=%s hit Groq rate limit, status=%d (attempt %d): %s",
+                        "[%s] task=%s hit rate limit, status=%d (attempt %d): %s",
                         self.role.value, task.id, exc.status_code, attempt + 1, exc,
                     )
                     if attempt < max_rate_limit_retries:
-                        await self._log(task, "Hit Groq's free-tier rate limit — waiting 25s and retrying once...", "status")
+                        await self._log(task, "Hit the provider's rate limit — waiting 25s and retrying once...", "status")
                         await asyncio.sleep(25)
                         continue
                     logger.error("[%s] task=%s FAILED: rate limit persisted after retry", self.role.value, task.id)
                     task.status = TaskStatus.FAILED
                     await self._log(
                         task,
-                        "Failed: Groq's free-tier rate limit (tokens-per-minute) was exceeded and persisted "
-                        "after one retry. This usually means multiple agents ran in the same request and "
-                        "collectively exceeded the per-minute budget, or this single request's own prompt "
-                        "was already too large. Try a smaller/more specific request, space out commands, "
-                        "or upgrade your Groq plan for a higher TPM limit.",
+                        "Failed: the LLM provider's rate limit was exceeded and persisted after one retry. "
+                        "Try a smaller/more specific request, space out commands, or upgrade your plan.",
                         "error",
                     )
                 else:
-                    # Some other API status error (auth, bad request,
-                    # server error, etc.) — not rate-limit-shaped, so no
-                    # retry; fails the same way the generic handler
-                    # below always has.
                     logger.error("[%s] task=%s FAILED: %s", self.role.value, task.id, exc, exc_info=True)
                     task.status = TaskStatus.FAILED
                     await self._log(task, f"Error: {exc}", "error")
