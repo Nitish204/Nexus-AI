@@ -1,11 +1,5 @@
 import { useState, useCallback } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-
-function authHeaders() {
-  const token = localStorage.getItem("nexus_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-}
+import { apiFetch } from "../utils/api";
 
 function StatRow({ label, value, valueColor }) {
   return (
@@ -27,9 +21,8 @@ export default function AnalyticsPanel({ projectId, deploymentStatus, files = []
   const runAnalysis = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${projectId}/analytics/run`, {
+      const res = await apiFetch(`/api/projects/${projectId}/analytics/run`, {
         method: "POST",
-        headers: authHeaders(),
       });
       setAnalysis(await res.json());
     } finally {
@@ -39,9 +32,7 @@ export default function AnalyticsPanel({ projectId, deploymentStatus, files = []
 
   const pollDeployment = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${projectId}/deployment`, {
-        headers: authHeaders(),
-      });
+      const res = await apiFetch(`/api/projects/${projectId}/deployment`);
       const data = await res.json();
       if (data) setLatestDeployment(data);
     } catch {
@@ -52,9 +43,8 @@ export default function AnalyticsPanel({ projectId, deploymentStatus, files = []
   const deploy = useCallback(async () => {
     setDeploying(true);
     try {
-      await fetch(`${API_BASE}/api/projects/${projectId}/deploy`, {
+      await apiFetch(`/api/projects/${projectId}/deploy`, {
         method: "POST",
-        headers: authHeaders(),
       });
       for (const delay of [2000, 4000, 7000, 12000]) {
         await new Promise((r) => setTimeout(r, delay));
