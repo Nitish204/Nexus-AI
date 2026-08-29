@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import APIRouter, Depends, BackgroundTasks, Header, HTTPException
+from fastapi import APIRouter, Depends, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -27,13 +27,44 @@ class CommandRequest(BaseModel):
     text: str
 
 
-async def get_current_user_id(authorization: str = Header(...)) -> str:
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing bearer token.")
-    token = authorization.removeprefix("Bearer ").strip()
+async def get_current_user_id(request: Request, authorization: str | None = Header(default=None)) -> str:
+    """
+    Two auth paths, both landing here:
+      - Mobile app: sends `Authorization: Bearer <token>`. A bearer
+        header is never attached automatically by anything other than
+        code that explicitly chose to — a malicious page can't force a
+        victim's phone to send one — so this path needs no further
+        CSRF check.
+      - Web app: no header, relies on the httpOnly `nexus_session`
+        cookie instead. Cookies ARE attached automatically by the
+        browser to any matching request, including ones a malicious
+        cross-site page tricks the browser into making — so any
+        state-changing request authenticated this way must also prove
+        it can read this site's own cookies (which a cross-site
+        attacker cannot) by echoing the `nexus_csrf` cookie's value
+        back in a header. This is the standard "double-submit cookie"
+        CSRF defense.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        user_id = decode_access_token(token)
+        if not user_id:
+            raise HTTPException(401, "Invalid or expired token.")
+        return user_id
+
+    token = request.cookies.get("nexus_session")
+    if not token:
+        raise HTTPException(401, "Missing authentication.")
     user_id = decode_access_token(token)
     if not user_id:
         raise HTTPException(401, "Invalid or expired token.")
+
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        csrf_cookie = request.cookies.get("nexus_csrf")
+        csrf_header = request.headers.get("x-csrf-token")
+        if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            raise HTTPException(403, "CSRF check failed — please refresh the page and try again.")
+
     return user_id
 
 
