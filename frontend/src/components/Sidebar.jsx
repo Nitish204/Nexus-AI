@@ -90,14 +90,22 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
   }, []);
 
   const createNewProject = async () => {
-    const res = await apiFetch(`/api/projects`, {
-      method: "POST",
-      body: JSON.stringify({ name: defaultProjectName() }),
-    });
-    const data = await res.json();
-    setProjects((prev) => [data, ...prev]);
-    onSelectProject(data.id);
-    setOpen(false);
+    try {
+      const res = await apiFetch(`/api/projects`, {
+        method: "POST",
+        body: JSON.stringify({ name: defaultProjectName() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Create failed (${res.status}).`);
+      }
+      const data = await res.json();
+      setProjects((prev) => [data, ...prev]);
+      onSelectProject(data.id);
+      setOpen(false);
+    } catch (err) {
+      window.alert(`Couldn't create a new project: ${err.message}`);
+    }
   };
 
   const startRename = (p, e) => {
