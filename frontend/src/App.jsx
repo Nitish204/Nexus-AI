@@ -36,7 +36,10 @@ export default function App() {
     setCreating(true);
 
     apiFetch("/api/projects")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("Couldn't load your projects (not signed in?).");
+        return res.json();
+      })
       .then(async (existing) => {
         if (Array.isArray(existing) && existing.length > 0) {
           const mostRecent = existing
@@ -53,6 +56,7 @@ export default function App() {
           method: "POST",
           body: JSON.stringify({ name: "New Project" }),
         });
+        if (!res.ok) throw new Error("Couldn't create a new project (not signed in?).");
         const data = await res.json();
         const url = new URL(window.location.href);
         url.searchParams.set("project", data.id);
