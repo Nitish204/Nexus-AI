@@ -1,32 +1,37 @@
+import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
-import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { SafeAreaView, StyleSheet } from "react-native";
 import ProjectsScreen from "./screens/ProjectsScreen";
 import ProjectDetailScreen from "./screens/ProjectDetailScreen";
 import LoginScreen from "./screens/LoginScreen";
 
-const Stack = createNativeStackNavigator();
-
-// NEXUS Mobile Companion — a lightweight read/act client for the same
-// backend the web app uses. Purpose: check on a running build, glance
-// at the live agent feed, and trigger a deploy, from your phone —
-// not a full workspace replacement (no 3D scene, no in-browser editor).
+// NEXUS Mobile Companion — screen switching done with plain React state
+// instead of @react-navigation, since that package won't bundle inside
+// Snack's web-based bundler right now. Same end result, no extra
+// navigation dependency needed.
 export default function App() {
+  const [screen, setScreen] = useState("login"); // "login" | "projects" | "detail"
+  const [selectedProject, setSelectedProject] = useState(null);
+
+  const goToProjects = () => setScreen("projects");
+  const openProject = (project) => {
+    setSelectedProject(project);
+    setScreen("detail");
+  };
+  const goBack = () => setScreen("projects");
+
   return (
-    <NavigationContainer>
+    <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
-      <Stack.Navigator
-        initialRouteName="Login"
-        screenOptions={{
-          headerStyle: { backgroundColor: "#241533" },
-          headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "800" },
-        }}
-      >
-        <Stack.Screen name="Login" component={LoginScreen} options={{ title: "NEXUS" }} />
-        <Stack.Screen name="Projects" component={ProjectsScreen} options={{ title: "Your Projects" }} />
-        <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: "Project" }} />
-      </Stack.Navigator>
-    </NavigationContainer>
+      {screen === "login" && <LoginScreen onLoggedIn={goToProjects} />}
+      {screen === "projects" && <ProjectsScreen onSelectProject={openProject} />}
+      {screen === "detail" && selectedProject && (
+        <ProjectDetailScreen project={selectedProject} onBack={goBack} />
+      )}
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#1a0f26" },
+});
