@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { API_BASE, apiFetch, getWsToken } from "../utils/api";
 
-// Point this at your deployed backend. Using env var so it can differ
-// between local dev and production (Netlify) builds.
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 /**
@@ -34,6 +32,8 @@ export function useNexusProject(projectId) {
     setFiles({});
 
     if (!projectId) return;
+    let cancelled = false;
+    let ws = null;
 
     // Load the project's ACTUAL saved files immediately on open — this
     // was completely missing before. The editor previously only ever
@@ -41,10 +41,7 @@ export function useNexusProject(projectId) {
     // so opening an existing project with real code already generated
     // in a past session showed nothing at all until a brand-new
     // command happened to stream something.
-    const token = localStorage.getItem("nexus_token");
-    fetch(`${API_BASE}/api/projects/${projectId}/files`, {
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    })
+    apiFetch(`/api/projects/${projectId}/files`)
       .then((res) => res.json())
       .then((data) => {
         const byPath = Object.fromEntries((Array.isArray(data) ? data : []).map((f) => [f.path, f]));
@@ -52,38 +49,44 @@ export function useNexusProject(projectId) {
       })
       .catch(() => setFiles({}));
 
-    const ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}?token=${encodeURIComponent(token || "")}`);
-    wsRef.current = ws;
-    ws.onmessage = (event) => {
-      const { type, payload } = JSON.parse(event.data);
-      if (type === "agent_message" || type === "agent_stream") {
-        setAgentActivity((prev) => [...prev.slice(-199), { type, ...payload, t: Date.now() }]);
-      }
-      if (type === "task_status") {
-        setTaskStatuses((prev) => ({ ...prev, [payload.task_id]: payload }));
-      }
-      if (type === "deployment_status") {
-        setDeploymentStatus(payload);
-      }
-      if (type === "sandbox_result") {
-        setSandboxResults((prev) => [...prev.slice(-49), payload]);
-      }
-    };
-    return () => ws.close();
-  }, [projectId]);
+    // The WebSocket needs its own short-lived token (see utils/api.js
+    // for why this can't just reuse the httpOnly session cookie) —
+    // fetched fresh right before each connection attempt.
+    getWsToken()
+      .then((token) => {
+        if (cancelled) return;
+        ws = new WebSocket(`${WS_BASE}/ws/projects/${projectId}?token=${encodeURIComponent(token)}`);
+        wsRef.current = ws;
+        ws.onmessage = (event) => {
+          const { type, payload } = JSON.parse(event.data);
+          if (type === "agent_message" || type === "agent_stream") {
+            setAgentActivity((prev) => [...prev.slice(-199), { type, ...payload, t: Date.now() }]);
+          }
+          if (type === "task_status") {
+            setTaskStatuses((prev) => ({ ...prev, [payload.task_id]: payload }));
+          }
+          if (type === "deployment_status") {
+            setDeploymentStatus(payload);
+          }
+          if (type === "sandbox_result") {
+            setSandboxResults((prev) => [...prev.slice(-49), payload]);
+          }
+        };
+      })
+      .catch((err) => console.error("[NEXUS] Couldn't open the live connection:", err));
 
-  const authHeaders = () => {
-    const token = localStorage.getItem("nexus_token");
-    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-  };
+    return () => {
+      cancelled = true;
+      if (ws) ws.close();
+    };
+  }, [projectId]);
 
   const sendCommand = useCallback(
     async (text) => {
       console.log("[NEXUS] sendCommand called with:", text, "projectId:", projectId);
       try {
-        const res = await fetch(`${API_BASE}/api/projects/${projectId}/command`, {
+        const res = await apiFetch(`/api/projects/${projectId}/command`, {
           method: "POST",
-          headers: authHeaders(),
           body: JSON.stringify({ text }),
         });
         const data = await res.json().catch(() => null);
@@ -99,9 +102,7 @@ export function useNexusProject(projectId) {
   );
 
   const refreshFiles = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/files`, {
-      headers: authHeaders(),
-    });
+    const res = await apiFetch(`/api/projects/${projectId}/files`);
     const data = await res.json();
     const byPath = Object.fromEntries(data.map((f) => [f.path, f]));
     setFiles(byPath);
