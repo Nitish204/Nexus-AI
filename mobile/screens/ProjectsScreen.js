@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from "react-native";
 import { listProjects } from "../api";
 
-export default function ProjectsScreen({ navigation }) {
+export default function ProjectsScreen({ onSelectProject }) {
   const [projects, setProjects] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -22,6 +22,7 @@ export default function ProjectsScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.header}>Your Projects</Text>
       <FlatList
         data={projects}
         keyExtractor={(item) => item.id}
@@ -29,10 +30,7 @@ export default function ProjectsScreen({ navigation }) {
         contentContainerStyle={{ padding: 16 }}
         ListEmptyComponent={<Text style={styles.empty}>No projects yet — create one on the web app.</Text>}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => navigation.navigate("ProjectDetail", { projectId: item.id, projectName: item.name })}
-          >
+          <TouchableOpacity style={styles.card} onPress={() => onSelectProject(item)}>
             <Text style={styles.cardTitle}>{item.name}</Text>
             <Text style={styles.cardDesc} numberOfLines={2}>{item.description || "No description"}</Text>
           </TouchableOpacity>
@@ -44,6 +42,7 @@ export default function ProjectsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#1a0f26" },
+  header: { color: "#fff", fontWeight: "800", fontSize: 20, padding: 16, paddingBottom: 0 },
   card: {
     backgroundColor: "#ffffff10", borderRadius: 14, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: "#ffffff1a",
