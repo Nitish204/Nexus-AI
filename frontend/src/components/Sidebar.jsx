@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { defaultProjectName } from "../utils/projectNaming";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-
-function authHeaders() {
-  const token = localStorage.getItem("nexus_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-}
+import { apiFetch } from "../utils/api";
 
 // Groups projects into day-based buckets (Today / Yesterday / This
 // Week / Older) — the "day to day history" grouping.
@@ -70,49 +64,34 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [now, setNow] = useState(() => new Date());
-  // Escape sets renamingId to null, which unmounts the input — but
-  // removing a focused DOM node fires a native blur event just before
-  // it disappears, and that blur handler calls commitRename() too.
-  // Without this guard, cancelling via Escape would still silently
-  // save the rename anyway. Set right before cancelling, checked and
-  // cleared inside commitRename.
   const cancelingRenameRef = useRef(false);
 
   const loadProjects = () => {
-    fetch(`${API_BASE}/api/projects`, { headers: authHeaders() })
+    apiFetch(`/api/projects`)
       .then((res) => res.json())
       .then((data) => setProjects(Array.isArray(data) ? data : []))
       .catch(() => setProjects([]))
       .finally(() => setLoading(false));
   };
 
-  // Initial load + reload whenever the open project changes (e.g. a
-  // rename or new command elsewhere may have touched updated_at).
   useEffect(() => {
     setLoading(true);
     loadProjects();
   }, [currentProjectId]);
 
-  // Keep the list quietly fresh in the background — this is what makes
-  // "time ago" and ordering actually reflect activity (like a command
-  // running in the currently open project) instead of only updating
-  // the moment you switch projects.
   useEffect(() => {
     const poll = setInterval(loadProjects, 15000);
     return () => clearInterval(poll);
   }, []);
 
-  // Tick the clock every 30s so relative timestamps ("2m ago" → "3m
-  // ago") visibly advance without needing a full data reload.
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(tick);
   }, []);
 
   const createNewProject = async () => {
-    const res = await fetch(`${API_BASE}/api/projects`, {
+    const res = await apiFetch(`/api/projects`, {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({ name: defaultProjectName() }),
     });
     const data = await res.json();
@@ -136,9 +115,8 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
     setRenamingId(null);
     if (!name) return;
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
-    await fetch(`${API_BASE}/api/projects/${id}`, {
+    await apiFetch(`/api/projects/${id}`, {
       method: "PATCH",
-      headers: authHeaders(),
       body: JSON.stringify({ name }),
     }).catch(() => loadProjects());
   };
@@ -146,18 +124,11 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
   const deleteProject = async (p, e) => {
     e.stopPropagation();
     if (!window.confirm(`Delete "${p.name || "this project"}"? This can't be undone.`)) return;
-    // Snapshot for rollback — fetch() resolves normally even on 401/404/500,
-    // it only rejects on true network failures, so the HTTP status has to
-    // be checked explicitly or a failed delete goes unnoticed: the project
-    // vanishes from the UI immediately (optimistic removal below) but
-    // reappears on the next 15s background poll since it was never
-    // actually deleted server-side.
     const previous = projects;
     setProjects((prev) => prev.filter((x) => x.id !== p.id));
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${p.id}`, {
+      const res = await apiFetch(`/api/projects/${p.id}`, {
         method: "DELETE",
-        headers: authHeaders(),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -176,10 +147,6 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
     }
   };
 
-  // Selecting a project only ever changes which id is "current" — the
-  // actual per-project data (files, activity, tasks) is loaded fresh by
-  // useNexusProject whenever that id changes, so project1 vs project2
-  // never bleed into each other here.
   const selectProject = (id) => {
     if (id === currentProjectId) {
       setOpen(false);
@@ -214,12 +181,10 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         color: "#2e2e3a",
       }}
     >
-      {/* Drifting aurora color blobs for a bright, alive backdrop */}
       <div style={{ position: "absolute", width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(circle, #a78bfa66, transparent 70%)", top: -50, left: -40, animation: "nexusBlobFloat1 9s ease-in-out infinite", filter: "blur(6px)", pointerEvents: "none" }} />
       <div style={{ position: "absolute", width: 190, height: 190, borderRadius: "50%", background: "radial-gradient(circle, #5eead455, transparent 70%)", bottom: 100, right: -40, animation: "nexusBlobFloat2 11s ease-in-out infinite", filter: "blur(6px)", pointerEvents: "none" }} />
       <div style={{ position: "absolute", width: 150, height: 150, borderRadius: "50%", background: "radial-gradient(circle, #ffd66655, transparent 70%)", top: 280, left: -30, animation: "nexusBlobFloat2 13s ease-in-out infinite", filter: "blur(6px)", pointerEvents: "none" }} />
 
-      {/* Logo mark */}
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, padding: "16px 18px 4px" }}>
         <div style={{ position: "relative", width: 22, height: 22 }}>
           <div style={{ position: "absolute", inset: 0, border: "1.5px dashed #7c3aed55", borderRadius: "50%", animation: "nexusRingSpin 12s linear infinite" }} />
@@ -252,7 +217,6 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         </span>
       </div>
 
-      {/* Account header */}
       <div
         style={{
           position: "relative",
@@ -323,7 +287,6 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         </button>
       </div>
 
-      {/* Mini stat strip */}
       <div style={{ position: "relative", display: "flex", gap: 8, padding: "12px 18px 0" }}>
         <div className="nexus-glass" style={{ flex: 1, borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: ACCENT }}>{projects.length}</div>
@@ -339,7 +302,6 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         </div>
       </div>
 
-      {/* New project + search */}
       <div style={{ position: "relative", padding: "14px 16px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
         <button
           onClick={createNewProject}
@@ -388,7 +350,6 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         )}
       </div>
 
-      {/* Project list */}
       <div style={{ position: "relative", flex: 1, overflowY: "auto", padding: "6px 10px 16px" }}>
         {loading && (
           <div style={{ padding: "14px 8px", fontSize: 12, color: "#8a8a9a", display: "flex", alignItems: "center", gap: 8 }}>
@@ -630,11 +591,6 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
         </button>
       )}
 
-      {/* Renders exactly ONE live copy of `content` at a time — either
-          the static desktop sidebar, or the mobile slide-over, never
-          both mounted simultaneously (that duplication used to cause
-          two copies of interactive elements like the rename input,
-          both trying to autoFocus, existing in the DOM at once). */}
       {!isMobile && <div style={{ flexShrink: 0 }}>{content}</div>}
 
       {isMobile && open && (
