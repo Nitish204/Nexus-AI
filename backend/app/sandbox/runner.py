@@ -11,6 +11,9 @@ a fix-and-retry loop instead of blindly marking the task DONE.
 Safety notes:
 - No network access inside the sandbox container (network_disabled=True).
 - Hard memory limit + wall-clock timeout enforced.
+- pids_limit caps process count (fork-bomb protection) — see notes below.
+- All Linux capabilities dropped and no-new-privileges set, so even a
+  container escape has as little to work with as possible.
 - Container is always removed after the run, win or lose.
 - Only files belonging to the project are ever written into the
   container — nothing from the host filesystem is exposed.
@@ -90,6 +93,15 @@ class SandboxRunner:
                 mem_limit=settings.sandbox_memory_limit,
                 network_disabled=True,
                 detach=True,
+                # Defense in depth beyond the memory cap: without a pids
+                # limit, generated code that spawns processes in a loop
+                # (accidentally or via a malicious prompt injection
+                # hidden in a file an agent read) can fork-bomb past the
+                # memory limit and exhaust host process table entries —
+                # mem_limit alone doesn't stop that.
+                pids_limit=64,
+                security_opt=["no-new-privileges"],
+                cap_drop=["ALL"],
             )
             container.put_archive("/workspace", self._build_tar(python_files))
             container.start()
