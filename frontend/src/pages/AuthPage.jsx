@@ -14,11 +14,6 @@ const SECURITY_QUESTIONS = [
   "What elementary school did you attend?",
 ];
 
-// fetch() throws a bare "Failed to fetch" (or "Load failed" in Safari)
-// when the request never reaches a server at all — CORS block, DNS
-// failure, the backend being down/asleep, etc. That string means
-// nothing to a user reading it as if it were a password error, so it
-// gets rewritten into something actionable instead of shown verbatim.
 function friendlyError(err) {
   const msg = err?.message || "";
   if (msg === "Failed to fetch" || msg === "Load failed" || msg === "NetworkError when attempting to fetch resource.") {
@@ -27,7 +22,6 @@ function friendlyError(err) {
   return msg || "Something went wrong.";
 }
 
-// ---------- 3D Scene: a cluster of distorted, floating gems over a bright gradient ----------
 function CenterGem({ pointer }) {
   const meshRef = useRef();
   useFrame((state) => {
@@ -112,9 +106,8 @@ function Scene() {
   );
 }
 
-// ---------- Auth Card ----------
 export default function AuthPage({ onAuthenticated }) {
-  const [mode, setMode] = useState("login"); // "login" | "signup" | "forgot"
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -124,9 +117,7 @@ export default function AuthPage({ onAuthenticated }) {
   const [mounted, setMounted] = useState(false);
   const googleButtonRef = useRef(null);
 
-  // Forgot/reset password flow — no email, no link. Enter email, answer
-  // the security question set at signup, then set a new password.
-  const [forgotStep, setForgotStep] = useState("email"); // "email" | "answer"
+  const [forgotStep, setForgotStep] = useState("email");
   const [forgotEmail, setForgotEmail] = useState("");
   const [securityQuestion, setSecurityQuestion] = useState("");
   const [securityAnswer, setSecurityAnswer] = useState("");
@@ -134,7 +125,6 @@ export default function AuthPage({ onAuthenticated }) {
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [resetDone, setResetDone] = useState(false);
 
-  // Signup-only: security question chosen + answered at account creation
   const [securityQuestionChoice, setSecurityQuestionChoice] = useState(SECURITY_QUESTIONS[0]);
   const [securityAnswerSignup, setSecurityAnswerSignup] = useState("");
 
@@ -144,7 +134,12 @@ export default function AuthPage({ onAuthenticated }) {
   }, []);
 
   const saveSession = (data) => {
-    localStorage.setItem("nexus_token", data.access_token);
+    // The access token itself is no longer stored here — the backend
+    // already set it as an httpOnly cookie on this same response
+    // (see the fetch calls below using credentials: "include"), which
+    // JS can't read even if it tried. Only the non-sensitive user
+    // object is kept, purely so the UI has something to render
+    // immediately without waiting on a round-trip to /me.
     localStorage.setItem("nexus_user", JSON.stringify(data.user));
     onAuthenticated(data);
   };
@@ -168,6 +163,7 @@ export default function AuthPage({ onAuthenticated }) {
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(body),
       });
       const data = await res.json();
@@ -185,7 +181,9 @@ export default function AuthPage({ onAuthenticated }) {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/security-question?email=${encodeURIComponent(forgotEmail)}`);
+      const res = await fetch(`${API_BASE}/api/auth/security-question?email=${encodeURIComponent(forgotEmail)}`, {
+        credentials: "include",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Something went wrong.");
       setSecurityQuestion(data.security_question);
@@ -209,6 +207,7 @@ export default function AuthPage({ onAuthenticated }) {
       const res = await fetch(`${API_BASE}/api/auth/reset-password-direct`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           email: forgotEmail,
           security_answer: securityAnswer,
@@ -237,7 +236,6 @@ export default function AuthPage({ onAuthenticated }) {
     setMode("login");
   };
 
-
   const handleGoogleCredential = useCallback(async (response) => {
     setError("");
     setLoading(true);
@@ -245,6 +243,7 @@ export default function AuthPage({ onAuthenticated }) {
       const res = await fetch(`${API_BASE}/api/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ id_token: response.credential }),
       });
       const data = await res.json();
@@ -280,29 +279,54 @@ export default function AuthPage({ onAuthenticated }) {
   }, [handleGoogleCredential]);
 
   const handleGitHubLogin = () => {
+    // CSRF protection: a random, unguessable state value is generated
+    // here, stored in sessionStorage (readable only by this origin —
+    // an attacker's page can't access it), and sent to GitHub. On the
+    // way back, the callback below refuses to proceed unless the value
+    // GitHub returns matches what's stored here. Without this, an
+    // attacker could start their own OAuth flow, capture the resulting
+    // code, and trick a victim into completing NEXUS login as the
+    // attacker's GitHub account (a "login CSRF").
+    const state = crypto.randomUUID();
+    sessionStorage.setItem("nexus_github_oauth_state", state);
     const redirectUri = window.location.origin;
     const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(
       redirectUri
-    )}&scope=read:user user:email`;
+    )}&scope=read:user user:email&state=${encodeURIComponent(state)}`;
     window.location.href = url;
   };
 
-  // Handle GitHub redirect back with ?code=...
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("code");
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const returnedState = params.get("state");
     if (!code) return;
+
+    const expectedState = sessionStorage.getItem("nexus_github_oauth_state");
+    sessionStorage.removeItem("nexus_github_oauth_state");
+    if (!expectedState || returnedState !== expectedState) {
+      setError("GitHub sign-in couldn't be verified (state mismatch) — please try again.");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("code");
+      url.searchParams.delete("state");
+      window.history.replaceState({}, "", url);
+      return;
+    }
+
     (async () => {
       setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/api/auth/github`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ code }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "GitHub sign-in failed.");
         const url = new URL(window.location.href);
         url.searchParams.delete("code");
+        url.searchParams.delete("state");
         window.history.replaceState({}, "", url);
         saveSession(data);
       } catch (err) {
@@ -370,12 +394,10 @@ export default function AuthPage({ onAuthenticated }) {
         }
       `}</style>
 
-      {/* 3D gem scene — always full-screen background */}
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <Scene />
       </div>
 
-      {/* Soft vignette so the card stays readable over the bright gradient */}
       <div
         style={{
           position: "absolute",
@@ -387,7 +409,6 @@ export default function AuthPage({ onAuthenticated }) {
         }}
       />
 
-      {/* Brand label, top-left */}
       <div
         style={{
           position: "absolute",
@@ -413,7 +434,6 @@ export default function AuthPage({ onAuthenticated }) {
         </div>
       </div>
 
-      {/* Auth card, centered on mobile, right-aligned on desktop */}
       <div
         style={{
           position: "absolute",
