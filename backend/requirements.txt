@@ -10,6 +10,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 json-repair==0.62.0
+email-validator==2.2.0
 websockets==13.0
 redis==5.0.8
 celery==5.4.0
