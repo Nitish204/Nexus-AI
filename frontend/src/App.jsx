@@ -2,8 +2,7 @@ import Sidebar from "./components/Sidebar";
 import { useEffect, useState } from "react";
 import Workspace from "./scenes/Workspace";
 import AuthPage from "./pages/AuthPage";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+import { apiFetch } from "./utils/api";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -14,21 +13,18 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
-  // Validate any stored token on load
+  // Validate the session on load. The token itself lives only in the
+  // httpOnly cookie the backend set at login — apiFetch sends it
+  // automatically via credentials: "include", so there's nothing to
+  // read from localStorage here anymore.
   useEffect(() => {
-    const token = localStorage.getItem("nexus_token");
-    if (!token) {
-      setCheckingAuth(false);
-      return;
-    }
-    fetch(`${API_BASE}/api/auth/me?token=${encodeURIComponent(token)}`)
+    apiFetch("/api/auth/me")
       .then((res) => {
         if (!res.ok) throw new Error("expired");
         return res.json();
       })
       .then((data) => setUser(data))
       .catch(() => {
-        localStorage.removeItem("nexus_token");
         localStorage.removeItem("nexus_user");
       })
       .finally(() => setCheckingAuth(false));
@@ -38,9 +34,8 @@ export default function App() {
   useEffect(() => {
     if (!user || projectId || creating) return;
     setCreating(true);
-    const token = localStorage.getItem("nexus_token");
 
-    fetch(`${API_BASE}/api/projects`, { headers: { Authorization: `Bearer ${token}` } })
+    apiFetch("/api/projects")
       .then((res) => res.json())
       .then(async (existing) => {
         if (Array.isArray(existing) && existing.length > 0) {
@@ -54,9 +49,8 @@ export default function App() {
           return;
         }
         // No projects exist yet for this user — create the first one
-        const res = await fetch(`${API_BASE}/api/projects`, {
+        const res = await apiFetch("/api/projects", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ name: "New Project" }),
         });
         const data = await res.json();
@@ -77,9 +71,12 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("nexus_token");
-    localStorage.removeItem("nexus_user");
-    window.location.href = "/";
+    // Clears the httpOnly cookie server-side — the frontend has no
+    // way to delete an httpOnly cookie itself, by design.
+    apiFetch("/api/auth/logout", { method: "POST" }).finally(() => {
+      localStorage.removeItem("nexus_user");
+      window.location.href = "/";
+    });
   };
 
   if (checkingAuth) {
