@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { API_BASE, apiFetch, getWsToken } from "../utils/api";
+import { API_BASE, BACKEND_WS_ORIGIN, apiFetch, getWsToken } from "../utils/api";
 
-const WS_BASE = API_BASE.replace(/^http/, "ws");
+const WS_BASE = BACKEND_WS_ORIGIN;
 
 /**
  * Connects the 3D workspace to the Python backend: opens the WebSocket
