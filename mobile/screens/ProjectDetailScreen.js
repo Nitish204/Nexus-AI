@@ -7,20 +7,18 @@ const STATUS_COLORS = {
   in_review: "#4dd8ff", done: "#7CFFB2", failed: "#ff5f5f",
 };
 
-export default function ProjectDetailScreen({ route, navigation }) {
-  const { projectId, projectName } = route.params;
+export default function ProjectDetailScreen({ project, onBack }) {
   const [tasks, setTasks] = useState([]);
   const [deploying, setDeploying] = useState(false);
 
   useEffect(() => {
-    navigation.setOptions({ title: projectName });
-    getProjectTasks(projectId).then(setTasks).catch(() => {});
-  }, [projectId]);
+    getProjectTasks(project.id).then(setTasks).catch(() => {});
+  }, [project.id]);
 
   const handleDeploy = async () => {
     setDeploying(true);
     try {
-      await triggerDeploy(projectId);
+      await triggerDeploy(project.id);
       Alert.alert("Deploy started", "Watch progress on the web app's live feed.");
     } catch (e) {
       Alert.alert("Deploy failed to start", e.message);
@@ -31,6 +29,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={onBack}><Text style={styles.back}>{"< Back"}</Text></TouchableOpacity>
+        <Text style={styles.header}>{project.name}</Text>
+        <View style={{ width: 40 }} />
+      </View>
       <TouchableOpacity style={styles.deployButton} onPress={handleDeploy} disabled={deploying}>
         <Text style={styles.deployText}>{deploying ? "Starting..." : "Deploy Now"}</Text>
       </TouchableOpacity>
@@ -57,6 +60,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#1a0f26" },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, paddingBottom: 0 },
+  back: { color: "#ffd166", fontWeight: "700" },
+  header: { color: "#fff", fontWeight: "800", fontSize: 16 },
   deployButton: {
     margin: 16, backgroundColor: "#ff5fa2", borderRadius: 12, padding: 14, alignItems: "center",
   },
