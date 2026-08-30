@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Float, MeshDistortMaterial, Sparkles, Environment } from "@react-three/drei";
+import { API_BASE } from "../utils/api";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
 
@@ -134,12 +134,6 @@ export default function AuthPage({ onAuthenticated }) {
   }, []);
 
   const saveSession = (data) => {
-    // The access token itself is no longer stored here — the backend
-    // already set it as an httpOnly cookie on this same response
-    // (see the fetch calls below using credentials: "include"), which
-    // JS can't read even if it tried. Only the non-sensitive user
-    // object is kept, purely so the UI has something to render
-    // immediately without waiting on a round-trip to /me.
     localStorage.setItem("nexus_user", JSON.stringify(data.user));
     onAuthenticated(data);
   };
@@ -147,6 +141,16 @@ export default function AuthPage({ onAuthenticated }) {
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (!email.trim() || !password) {
+      setError("Please fill in both email and password.");
+      return;
+    }
+    if (mode === "signup" && !securityAnswerSignup.trim()) {
+      setError("Please answer the security question.");
+      return;
+    }
+
     setLoading(true);
     try {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
@@ -267,26 +271,28 @@ export default function AuthPage({ onAuthenticated }) {
         client_id: GOOGLE_CLIENT_ID,
         callback: handleGoogleCredential,
       });
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: "filled_blue",
-        size: "large",
-        shape: "pill",
-        width: 320,
-      });
+
+      let attempts = 0;
+      const tryRender = () => {
+        attempts += 1;
+        if (googleButtonRef.current) {
+          window.google.accounts.id.renderButton(googleButtonRef.current, {
+            theme: "filled_blue",
+            size: "large",
+            shape: "pill",
+            width: 320,
+          });
+        } else if (attempts < 10) {
+          setTimeout(tryRender, 150);
+        }
+      };
+      tryRender();
     };
     document.body.appendChild(script);
     return () => document.body.removeChild(script);
   }, [handleGoogleCredential]);
 
   const handleGitHubLogin = () => {
-    // CSRF protection: a random, unguessable state value is generated
-    // here, stored in sessionStorage (readable only by this origin —
-    // an attacker's page can't access it), and sent to GitHub. On the
-    // way back, the callback below refuses to proceed unless the value
-    // GitHub returns matches what's stored here. Without this, an
-    // attacker could start their own OAuth flow, capture the resulting
-    // code, and trick a victim into completing NEXUS login as the
-    // attacker's GitHub account (a "login CSRF").
     const state = crypto.randomUUID();
     sessionStorage.setItem("nexus_github_oauth_state", state);
     const redirectUri = window.location.origin;
@@ -748,7 +754,6 @@ function FloatingInput({ label, value, onChange, type }) {
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        required
         style={{
           width: "100%",
           padding: "14px 12px 8px 12px",
