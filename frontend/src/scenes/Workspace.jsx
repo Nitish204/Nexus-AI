@@ -87,24 +87,25 @@ export default function Workspace({ projectId }) {
     let index = 0;
     let cancelled = false;
 
-    const pickDeepMaleVoice = () => {
+    const pickCrispBritishVoice = () => {
       const voices = window.speechSynthesis.getVoices();
       if (!voices.length) return null;
 
       const preferredNames = [
         "Google UK English Male",
-        "Microsoft David",
-        "Microsoft Guy",
         "Daniel",
-        "Fred",
-        "Aaron",
-        "Gordon",
+        "Microsoft Ryan",
         "Arthur",
       ];
       for (const name of preferredNames) {
         const match = voices.find((v) => v.name.includes(name));
         if (match) return match;
       }
+
+      // Fall back to any British-English voice if none of the named
+      // ones above are installed on this device.
+      const anyUkVoice = voices.find((v) => /en-GB|United Kingdom|British/i.test(v.lang) || /UK/i.test(v.name));
+      if (anyUkVoice) return anyUkVoice;
 
       const genericMale = voices.find((v) => /male/i.test(v.name) && !/female/i.test(v.name));
       if (genericMale) return genericMale;
@@ -115,10 +116,10 @@ export default function Workspace({ projectId }) {
     const speakNext = () => {
       if (cancelled || index >= lines.length) return;
       const utterance = new SpeechSynthesisUtterance(lines[index]);
-      const voice = pickDeepMaleVoice();
+      const voice = pickCrispBritishVoice();
       if (voice) utterance.voice = voice;
-      utterance.pitch = 0.65;
-      utterance.rate = 0.92;
+      utterance.pitch = 0.85;
+      utterance.rate = 1.08;
       utterance.onend = () => {
         if (cancelled) return;
         index++;
