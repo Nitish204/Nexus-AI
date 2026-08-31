@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { defaultProjectName } from "../utils/projectNaming";
 import { apiFetch } from "../utils/api";
+import { isPushSupported, getPushSubscriptionStatus, subscribeToPush, unsubscribeFromPush } from "../utils/push";
 
 // Groups projects into day-based buckets (Today / Yesterday / This
 // Week / Older) — the "day to day history" grouping.
@@ -64,6 +65,46 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [now, setNow] = useState(() => new Date());
+
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushStatus, setPushStatus] = useState("not-subscribed"); // not-subscribed | subscribed | denied | unsupported
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    const supported = isPushSupported();
+    setPushSupported(supported);
+    if (supported) {
+      getPushSubscriptionStatus().then(setPushStatus);
+    }
+  }, []);
+
+  const handleTogglePush = async () => {
+    setPushBusy(true);
+    try {
+      if (pushStatus === "subscribed") {
+        await unsubscribeFromPush();
+        setPushStatus("not-subscribed");
+      } else {
+        await subscribeToPush();
+        setPushStatus("subscribed");
+      }
+    } catch (err) {
+      const status = await getPushSubscriptionStatus();
+      setPushStatus(status);
+      if (status !== "denied") {
+        window.alert(`Couldn't update notification settings: ${err.message}`);
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  // Escape sets renamingId to null, which unmounts the input — but
+  // removing a focused DOM node fires a native blur event just before
+  // it disappears, and that blur handler calls commitRename() too.
+  // Without this guard, cancelling via Escape would still silently
+  // save the rename anyway. Set right before cancelling, checked and
+  // cleared inside commitRename.
   const cancelingRenameRef = useRef(false);
 
   const loadProjects = () => {
@@ -74,16 +115,24 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
       .finally(() => setLoading(false));
   };
 
+  // Initial load + reload whenever the open project changes (e.g. a
+  // rename or new command elsewhere may have touched updated_at).
   useEffect(() => {
     setLoading(true);
     loadProjects();
   }, [currentProjectId]);
 
+  // Keep the list quietly fresh in the background — this is what makes
+  // "time ago" and ordering actually reflect activity (like a command
+  // running in the currently open project) instead of only updating
+  // the moment you switch projects.
   useEffect(() => {
     const poll = setInterval(loadProjects, 15000);
     return () => clearInterval(poll);
   }, []);
 
+  // Tick the clock every 30s so relative timestamps ("2m ago" → "3m
+  // ago") visibly advance without needing a full data reload.
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(tick);
@@ -294,6 +343,49 @@ export default function Sidebar({ user, currentProjectId, onSelectProject, onLog
           Logout
         </button>
       </div>
+
+      {pushSupported && (
+        <div style={{ position: "relative", padding: "0 18px 12px" }}>
+          <button
+            onClick={handleTogglePush}
+            disabled={pushBusy || pushStatus === "denied"}
+            className="nexus-glass"
+            style={{
+              width: "100%",
+              border: "1px solid #ffffff",
+              color: pushStatus === "subscribed" ? "#4dd0c1" : pushStatus === "denied" ? "#9a9aaa" : "#7c3aed",
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: pushBusy || pushStatus === "denied" ? "default" : "pointer",
+              padding: "9px 12px",
+              borderRadius: 10,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              opacity: pushBusy ? 0.6 : 1,
+            }}
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: pushStatus === "subscribed" ? "#4dd0c1" : "#9a9aaa",
+                boxShadow: pushStatus === "subscribed" ? "0 0 6px #4dd0c1" : "none",
+                flexShrink: 0,
+              }}
+            />
+            {pushBusy
+              ? "Working..."
+              : pushStatus === "subscribed"
+              ? "Notifications on"
+              : pushStatus === "denied"
+              ? "Notifications blocked (check browser settings)"
+              : "Enable notifications"}
+          </button>
+        </div>
+      )}
 
       <div style={{ position: "relative", display: "flex", gap: 8, padding: "12px 18px 0" }}>
         <div className="nexus-glass" style={{ flex: 1, borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
