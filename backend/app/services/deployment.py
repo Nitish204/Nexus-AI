@@ -1,7 +1,5 @@
 """
 NEXUS — Deployment service (Phase 5).
-
-Turns a project's generated files into a live URL with one call.
 """
 from __future__ import annotations
 
@@ -16,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.config import get_settings
 from app.core.events import event_bus
 from app.db.models import Deployment, GeneratedFile
+from app.services.push_notifications import send_push_to_project_owner
 
 settings = get_settings()
 
@@ -124,16 +123,8 @@ class LocalDockerProvider(DeployProvider):
 
 
 class KubernetesProvider(DeployProvider):
-    """Generates Deployment + Service manifests from the project's
-    Dockerfile-based image and applies them via the local kubeconfig
-    (in-cluster config if running inside a pod, otherwise ~/.kube/config).
-    Requires the `kubernetes` python client and an image already pushed
-    to a registry the cluster can pull from (this builds and tags it
-    locally; pushing to a registry is left to CI in real use, since that
-    step is registry-specific — ECR/GCR/Docker Hub all differ)."""
-
     def __init__(self, api_key: str = ""):
-        self.api_key = api_key  # unused; kept for interface parity
+        self.api_key = api_key
 
     async def deploy(self, project_root: Path, deployment: Deployment) -> Deployment:
         dockerfile = project_root / "Dockerfile"
@@ -227,4 +218,20 @@ async def run_deployment(session: AsyncSession, project_id: str) -> Deployment:
     await event_bus.publish(
         project_id, "deployment_status", {"status": updated.status, "url": updated.url, "id": updated.id}
     )
+
+    if updated.status == "live":
+        await send_push_to_project_owner(
+            session, project_id,
+            title="Deployment live",
+            body=f"Your deployment finished — {updated.url or 'check NEXUS for details'}.",
+            url=f"/?project={project_id}",
+        )
+    elif updated.status == "failed":
+        await send_push_to_project_owner(
+            session, project_id,
+            title="Deployment failed",
+            body=updated.log[:150] if updated.log else "Open NEXUS to see what went wrong.",
+            url=f"/?project={project_id}",
+        )
+
     return updated
