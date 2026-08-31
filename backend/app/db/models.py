@@ -53,12 +53,13 @@ class User(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     email: str = Field(index=True, unique=True)
     name: str = ""
-    password_hash: str | None = None
+    password_hash: str | None = None  # null for OAuth-only users
     provider: AuthProvider = AuthProvider.LOCAL
     avatar_url: str = ""
     created_at: datetime = utc_datetime_field()
     security_question: str | None = None
     security_answer_hash: str | None = None
+    is_admin: bool = False
 
 
 class Project(SQLModel, table=True):
@@ -136,25 +137,46 @@ class AnalysisResult(SQLModel, table=True):
 
 
 class Plugin(SQLModel, table=True):
-    """Marketplace catalog entry — a packaged extension (extra agent,
-    prompt template, integration) that a project owner can enable."""
     id: str = Field(default_factory=new_id, primary_key=True)
     slug: str = Field(index=True, unique=True)
     name: str
     description: str = ""
     author: str = ""
-    category: str = "integration"  # integration | agent | template | theme
+    category: str = "integration"
     version: str = "0.1.0"
     config: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = utc_datetime_field()
+    status: str = "approved"  # pending | approved | rejected
+    submitted_by: str | None = Field(default=None, foreign_key="user.id")
+    reviewed_by: str | None = Field(default=None, foreign_key="user.id")
+    review_note: str = ""
+
+
+class ApiKey(SQLModel, table=True):
+    id: str = Field(default_factory=new_id, primary_key=True)
+    owner_id: str = Field(foreign_key="user.id", index=True)
+    name: str = "API Key"
+    key_hash: str = Field(index=True, unique=True)
+    key_prefix: str
+    created_at: datetime = utc_datetime_field()
+    last_used_at: datetime | None = None
+    revoked: bool = False
 
 
 class ProjectPlugin(SQLModel, table=True):
-    """Join table: which plugins a given project has enabled."""
     id: str = Field(default_factory=new_id, primary_key=True)
     project_id: str = Field(foreign_key="project.id", index=True)
     plugin_id: str = Field(foreign_key="plugin.id", index=True)
     enabled_at: datetime = utc_datetime_field()
+
+
+class PushSubscription(SQLModel, table=True):
+    id: str = Field(default_factory=new_id, primary_key=True)
+    user_id: str = Field(foreign_key="user.id", index=True)
+    endpoint: str = Field(unique=True)
+    p256dh: str
+    auth: str
+    created_at: datetime = utc_datetime_field()
 
 
 class Deployment(SQLModel, table=True):
