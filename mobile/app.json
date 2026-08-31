@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "NEXUS",
+    "slug": "nexus-mobile",
+    "scheme": "nexus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.nexus.mobile" },
+    "android": { "package": "com.nexus.mobile" }
+  }
+}
