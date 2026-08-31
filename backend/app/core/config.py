@@ -1,7 +1,5 @@
 """
 NEXUS — Central configuration.
-All environment-dependent values live here so the rest of the app
-never touches os.environ directly.
 """
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +21,8 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     github_client_id: str = ""
     github_client_secret: str = ""
+    github_mobile_client_id: str = ""
+    github_mobile_client_secret: str = ""
 
     database_url: str = "postgresql+asyncpg://nexus:nexus@localhost:5432/nexus"
     redis_url: str = "redis://localhost:6379/0"
@@ -44,6 +44,10 @@ class Settings(BaseSettings):
 
     deploy_provider: str = "local"
     render_api_key: str = ""
+
+    vapid_private_key: str = ""
+    vapid_public_key: str = ""
+    vapid_subject: str = "mailto:admin@example.com"
 
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
