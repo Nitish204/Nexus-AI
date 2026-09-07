@@ -13,6 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
 from app.core.events import event_bus
+from app.core.safe_path import UnsafeGeneratedPath, safe_relative_path
 from app.db.models import Deployment, GeneratedFile
 from app.services.push_notifications import send_push_to_project_owner
 
@@ -20,11 +21,38 @@ settings = get_settings()
 
 
 def _materialize_project(files: list[GeneratedFile]) -> Path:
+    """Writes every GeneratedFile onto disk under a fresh temp directory.
+
+    Critical fix: `root / f.path` was previously used unguarded. In
+    pathlib, `Path("/tmp/xyz") / "/etc/cron.d/x"` evaluates to
+    `Path("/etc/cron.d/x")` — the `/` operator silently discards the
+    left-hand side entirely when the right side is an absolute path.
+    Since f.path is LLM-generated text with no upstream validation,
+    an absolute or "../"-laden path would previously let this function
+    write anywhere on the HOST filesystem the backend process can
+    reach — not a disposable sandbox container, the real server. Every
+    path is now normalized and confirmed to stay inside `root` via
+    safe_relative_path() before anything is written; anything that
+    fails the check is skipped, and the skip is surfaced in the return
+    value so it's visible in logs/events instead of silently vanishing.
+    """
     root = Path(tempfile.mkdtemp(prefix="nexus-deploy-"))
+    skipped: list[str] = []
     for f in files:
-        target = root / f.path
+        try:
+            safe_path = safe_relative_path(f.path)
+        except UnsafeGeneratedPath:
+            skipped.append(f.path)
+            continue
+        target = root / safe_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f.content)
+    if skipped:
+        import logging
+        logging.getLogger("nexus.deployment").warning(
+            "Skipped %d generated file(s) with unsafe paths during deploy: %s",
+            len(skipped), skipped,
+        )
     return root
 
 
