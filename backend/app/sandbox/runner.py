@@ -29,6 +29,7 @@ import docker
 from docker.errors import ImageNotFound, DockerException
 
 from app.core.config import get_settings
+from app.core.safe_path import UnsafeGeneratedPath, safe_relative_path
 from app.db.models import GeneratedFile
 
 settings = get_settings()
@@ -66,12 +67,23 @@ class SandboxRunner:
         return self._client
 
     def _build_tar(self, files: list[GeneratedFile]) -> bytes:
-        """Package project files into a tar stream to inject into the container."""
+        """Package project files into a tar stream to inject into the container.
+
+        Every path is run through safe_relative_path() first — an
+        unsanitized path (absolute, or containing "..") could otherwise
+        extract outside /workspace inside the container. Any file that
+        fails this check is skipped rather than aborting the whole run,
+        since one bad path shouldn't block testing every other file.
+        """
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as tar:
             for f in files:
+                try:
+                    safe_path = safe_relative_path(f.path)
+                except UnsafeGeneratedPath:
+                    continue
                 data = f.content.encode("utf-8")
-                info = tarfile.TarInfo(name=f.path)
+                info = tarfile.TarInfo(name=safe_path)
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
         buf.seek(0)
