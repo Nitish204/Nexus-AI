@@ -54,8 +54,9 @@ function isSecondaryFile(path) {
 const PRIMARY_CODE_ROLES = new Set(["backend_engineer", "frontend_engineer"]);
 
 export default function Workspace({ projectId }) {
-  const { agentActivity, taskStatuses, deploymentStatus, files, sendCommand } = useNexusProject(projectId);
+  const { agentActivity, taskStatuses, deploymentStatus, files, connectionStatus, sendCommand } = useNexusProject(projectId);
   const [command, setCommand] = useState("");
+  const [commandError, setCommandError] = useState("");
   const [activeCode, setActiveCode] = useState("# Generated code will stream in here...");
   const [mounted, setMounted] = useState(false);
   const [selectedPath, setSelectedPath] = useState(null); // manual file tab override
@@ -147,7 +148,7 @@ export default function Workspace({ projectId }) {
 
   const { start: startListening, listening, supported: voiceSupported } = useVoiceCommand((transcript) => {
     setCommand(transcript);
-    sendCommand(transcript);
+    runCommand(transcript);
   });
 
   const activeRoles = new Set(
@@ -156,6 +157,24 @@ export default function Workspace({ projectId }) {
       .map((t) => t.role)
   );
   const busy = activeRoles.size > 0;
+
+  // Bug fix: useNexusProject's sendCommand previously swallowed every
+  // failure internally (console.error only), so a failed command —
+  // wrong HTTP status, network drop, whatever — looked identical to a
+  // successful one from the user's point of view: the input just
+  // cleared and nothing happened. sendCommand now throws on failure so
+  // the two call sites (typed + voice) can surface it. This one helper
+  // is shared by both so the error banner and its auto-dismiss timer
+  // aren't duplicated in two places.
+  async function runCommand(text) {
+    setCommandError("");
+    try {
+      await sendCommand(text);
+    } catch (err) {
+      setCommandError(err.message || "Couldn't send that command — please try again.");
+      window.setTimeout(() => setCommandError(""), 6000);
+    }
+  }
 
   const fileList = Object.values(files);
   const sortedFiles = [...fileList].sort(
@@ -522,12 +541,45 @@ export default function Workspace({ projectId }) {
         </div>
       </div>
 
+      {/* Connection status + command error — both animate in/out with the
+          same translateY+opacity pattern as nexusPanelIn below, so they
+          feel native to the rest of this screen rather than bolted on. */}
+      {(connectionStatus === "reconnecting" || commandError) && (
+        <div
+          style={{
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "7px 14px",
+            fontSize: 11.5,
+            fontFamily: "'Space Grotesk', monospace",
+            color: commandError ? "#ff6b5c" : "#ffcc5c",
+            background: commandError ? "#ff6b5c14" : "#ffcc5c14",
+            borderTop: `1px solid ${commandError ? "#ff6b5c33" : "#ffcc5c33"}`,
+            animation: "nexusBarIn 0.25s ease",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              flexShrink: 0,
+              background: commandError ? "#ff6b5c" : "#ffcc5c",
+              animation: "nexusGlowPulse 1.4s ease-in-out infinite",
+            }}
+          />
+          {commandError || "Live connection dropped — reconnecting..."}
+        </div>
+      )}
+
       {/* Command bar — its own fixed row below the canvas, never overlaps, always visible */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           if (!command.trim()) return;
-          sendCommand(command);
+          runCommand(command);
           setCommand("");
         }}
         style={{
