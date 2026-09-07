@@ -1,8 +1,16 @@
 import Sidebar from "./components/Sidebar";
-import { useEffect, useState } from "react";
-import Workspace from "./scenes/Workspace";
+import { useEffect, useState, lazy, Suspense } from "react";
 import AuthPage from "./pages/AuthPage";
 import { apiFetch } from "./utils/api";
+
+// Bug fix (bundle size): Workspace pulls in @monaco-editor/react, which
+// alone accounts for the bulk of the >1MB single JS chunk Vite was
+// warning about on every build. Workspace is never rendered until
+// after login AND a project is selected, so it was pure dead weight on
+// every visitor's very first paint — including anyone just looking at
+// the sign-in screen. React.lazy() + Suspense defers loading Monaco's
+// code until the moment it's actually needed.
+const Workspace = lazy(() => import("./scenes/Workspace"));
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -24,9 +32,7 @@ export default function App() {
         return res.json();
       })
       .then((data) => setUser(data))
-      .catch(() => {
-        localStorage.removeItem("nexus_user");
-      })
+      .catch(() => {})
       .finally(() => setCheckingAuth(false));
   }, []);
 
@@ -78,7 +84,6 @@ export default function App() {
     // Clears the httpOnly cookie server-side — the frontend has no
     // way to delete an httpOnly cookie itself, by design.
     apiFetch("/api/auth/logout", { method: "POST" }).finally(() => {
-      localStorage.removeItem("nexus_user");
       window.location.href = "/";
     });
   };
@@ -130,7 +135,15 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <Workspace projectId={projectId} />
+        <Suspense
+          fallback={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#e6faff", fontFamily: "monospace" }}>
+              Loading workspace...
+            </div>
+          }
+        >
+          <Workspace projectId={projectId} />
+        </Suspense>
       </div>
     </div>
   );
