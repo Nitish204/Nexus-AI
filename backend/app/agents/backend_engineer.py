@@ -5,7 +5,7 @@ editor can render each file individually as it streams in.
 """
 
 from app.agents.base import AgentBase, parse_agent_json
-from app.db.models import AgentRole, GeneratedFile, Task
+from app.db.models import AgentRole, Task
 
 BACKEND_SYSTEM_PROMPT = """You are the Backend Engineer agent inside NEXUS.
 Given a task description and existing project context, generate the
@@ -37,15 +37,11 @@ class BackendEngineerAgent(AgentBase):
         data = parse_agent_json(raw_text)
 
         for f in data["files"]:
-            gen_file = GeneratedFile(
-                project_id=task.project_id,
-                path=f["path"],
-                content=f["content"],
-                language=f.get("language", "python"),
-                written_by=self.role,
+            written = await self._write_generated_file(
+                task.project_id, f["path"], f["content"], f.get("language", "python")
             )
-            self.session.add(gen_file)
-            await self._log(task, f["content"], "code")
+            if written is not None:
+                await self._log(task, f["content"], "code")
 
         await self.session.commit()
         await self._log(task, data.get("notes", "Backend implementation complete."), "status")
