@@ -5,6 +5,7 @@ Runs pure-Python static analysis tools against generated files so the
 dashboard can show live quality/security scores without needing to
 actually execute untrusted code (that's the sandbox service's job).
 """
+import asyncio
 import json
 import subprocess
 import tempfile
@@ -72,9 +73,22 @@ async def analyze_file(file: GeneratedFile) -> AnalysisResult:
         # for now we return a neutral result so the dashboard still renders.
         return AnalysisResult(project_id=file.project_id, file_path=file.path)
 
-    complexity = _complexity_score(file.content)
-    security_issues = _bandit_scan(file.content)
-    lint_issues = _ruff_scan(file.content)
+    # Bug fix: _bandit_scan/_ruff_scan call subprocess.run(), which
+    # blocks the calling thread until the subprocess exits (up to the
+    # 15s timeout). Calling that directly from an `async def` doesn't
+    # make it non-blocking — it blocks FastAPI's single-threaded event
+    # loop for that whole duration, freezing every other request,
+    # WebSocket message, and background task on the entire server, not
+    # just this one analysis call. asyncio.to_thread() moves each
+    # blocking call onto a worker thread so the event loop stays free;
+    # running all three concurrently also means the total wait is
+    # roughly max(complexity, bandit, ruff) instead of the sum of all three.
+    complexity, security_issues, lint_issues = await asyncio.gather(
+        asyncio.to_thread(_complexity_score, file.content),
+        asyncio.to_thread(_bandit_scan, file.content),
+        asyncio.to_thread(_ruff_scan, file.content),
+    )
+    maintainability = await asyncio.to_thread(_maintainability_index, file.content)
 
     return AnalysisResult(
         project_id=file.project_id,
@@ -82,5 +96,5 @@ async def analyze_file(file: GeneratedFile) -> AnalysisResult:
         complexity_score=complexity,
         security_issues=security_issues,
         lint_issues=lint_issues,
-        raw_report={"maintainability_index": _maintainability_index(file.content)},
+        raw_report={"maintainability_index": maintainability},
     )
