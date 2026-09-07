@@ -24,7 +24,9 @@ from sqlmodel import select
 
 from app.core.config import get_settings
 from app.core.events import event_bus
+from app.core.safe_path import UnsafeGeneratedPath, safe_relative_path
 from app.db.models import AgentMessage, AgentRole, GeneratedFile, Task, TaskStatus
+from datetime import datetime, timezone
 
 settings = get_settings()
 logger = logging.getLogger("nexus.agents")
@@ -99,6 +101,72 @@ class AgentBase(abc.ABC):
         if not files:
             return "No files exist yet in this project."
         return "\n".join(f"--- {f.path} ---\n{f.content[:1500]}" for f in files)
+
+    async def _write_generated_file(
+        self, project_id: str, path: str, content: str, language: str
+    ) -> GeneratedFile | None:
+        """
+        Create-or-update a GeneratedFile by (project_id, path).
+
+        Every concrete agent previously did `self.session.add(GeneratedFile(...))`
+        unconditionally on every call to handle_response — always inserting a
+        new row, never checking whether a file at that path already existed
+        for the project. This is guaranteed to fire repeatedly in normal
+        operation: the orchestrator's sandbox fix-and-retry loop
+        (SANDBOX_GATED_ROLES in services/orchestrator.py) sets a task back to
+        PENDING and re-runs the *same* agent on the *same* task when
+        generated code fails its tests, which calls handle_response again for
+        the same file path. Every retry was permanently duplicating rows —
+        which then get fed back into every subsequent agent's context
+        (_gather_context selects *all* files for the project), inflated the
+        file/quality counts shown in the UI, and were all written to disk
+        during deploy/sandbox/export, wasting the versioning already defined
+        on the model (GeneratedFile.version existed but was never used).
+
+        This now looks up the existing row for (project_id, path) first: if
+        found, its content/language/version/updated_at are updated in place;
+        otherwise a new row is created at version 1. Also the single place
+        where an agent-authored path is validated with safe_relative_path()
+        before it ever reaches the database — rejecting it here, at the
+        source, is more robust than only sanitizing it later in each
+        downstream consumer (sandbox, deploy, GitHub export).
+
+        Returns the written GeneratedFile, or None if `path` was rejected as
+        unsafe (the caller should skip logging/streaming that file in that case).
+        """
+        try:
+            safe_path = safe_relative_path(path)
+        except UnsafeGeneratedPath as exc:
+            logger.warning(
+                "[%s] project=%s rejected unsafe generated file path %r: %s",
+                self.role.value, project_id, path, exc,
+            )
+            return None
+
+        existing = (
+            await self.session.exec(
+                select(GeneratedFile).where(
+                    GeneratedFile.project_id == project_id,
+                    GeneratedFile.path == safe_path,
+                )
+            )
+        ).first()
+
+        if existing:
+            existing.content = content
+            existing.language = language
+            existing.written_by = self.role
+            existing.version += 1
+            existing.updated_at = datetime.now(timezone.utc)
+            self.session.add(existing)
+            return existing
+
+        new_file = GeneratedFile(
+            project_id=project_id, path=safe_path, content=content,
+            language=language, written_by=self.role,
+        )
+        self.session.add(new_file)
+        return new_file
 
     async def run(self, task: Task) -> Task:
         logger.info("[%s] task=%s starting: %s", self.role.value, task.id, task.title)
