@@ -1,5 +1,18 @@
 """
 NEXUS — Auth security helpers: password hashing and JWT issuance/verification.
+
+Fix vs. the original version: the passlib context used the plain
+"bcrypt" scheme, which silently truncates any input past 72 bytes.
+That means two different passwords that share the same first 72 bytes
+hash identically, and — more visibly — anyone using a long passphrase
+gets truncated on signup but may retype it differently (still >72
+bytes) on login and see a confusing "invalid password" even though
+what they typed is "correct". "bcrypt_sha256" pre-hashes the input
+with SHA-256 before handing it to bcrypt, removing the length cap
+entirely while staying within the same battle-tested bcrypt work
+factor. `deprecated="auto"` means any password hashed under the old
+"bcrypt" scheme (from before this fix) will still verify correctly and
+gets transparently re-hashed under the new scheme on next login.
 """
 from datetime import datetime, timedelta, timezone
 import secrets
@@ -10,7 +23,7 @@ from passlib.context import CryptContext
 from app.core.config import get_settings
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
