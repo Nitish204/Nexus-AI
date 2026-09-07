@@ -131,3 +131,81 @@ async def test_backend_engineer_raises_on_malformed_json(session, project):
     agent = BackendEngineerAgent(session)
     with pytest.raises(json.JSONDecodeError):
         await agent.handle_response(task, "this is not json at all")
+
+
+@pytest.mark.asyncio
+async def test_regenerating_the_same_path_updates_in_place_not_duplicates(session, project):
+    """Regression test for a real bug: the orchestrator's sandbox
+    fix-and-retry loop re-runs the same agent on the same task when
+    generated code fails its tests, which previously called
+    handle_response a second time and INSERTED a duplicate
+    GeneratedFile row for the same path instead of updating the
+    existing one. This silently doubled (tripled, ...) the context fed
+    to every later agent and inflated every file count in the app.
+    A second write to the same (project_id, path) must update the
+    existing row's content/version, not create a second row."""
+    task = Task(
+        project_id=project.id, title="Build API", description="d",
+        assigned_role=AgentRole.BACKEND_ENGINEER, status=TaskStatus.PENDING,
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+
+    agent = BackendEngineerAgent(session)
+
+    first_pass = json.dumps({
+        "files": [{"path": "app/main.py", "content": "print('v1')", "language": "python"}],
+        "notes": "first attempt",
+    })
+    await agent.handle_response(task, first_pass)
+
+    # Simulate the orchestrator's fix-and-retry loop calling the same
+    # agent again on the same task after a sandbox failure, producing
+    # corrected content for the *same* file path.
+    second_pass = json.dumps({
+        "files": [{"path": "app/main.py", "content": "print('v2 - fixed')", "language": "python"}],
+        "notes": "fixed after sandbox failure",
+    })
+    await agent.handle_response(task, second_pass)
+
+    result = await session.exec(
+        select(GeneratedFile).where(
+            GeneratedFile.project_id == project.id, GeneratedFile.path == "app/main.py"
+        )
+    )
+    matching = result.all()
+    assert len(matching) == 1, "retrying the same file path must update in place, not duplicate"
+    assert matching[0].content == "print('v2 - fixed')"
+    assert matching[0].version == 2
+
+
+@pytest.mark.asyncio
+async def test_unsafe_generated_file_path_is_rejected_not_written(session, project):
+    """Regression test: a generated path that tries to escape the
+    project (absolute, or containing '..') must never reach the
+    database — rejecting it here, at the source, is the first line of
+    defense, on top of the same check re-applied in the sandbox/
+    deployment/GitHub-export consumers."""
+    task = Task(
+        project_id=project.id, title="Build API", description="d",
+        assigned_role=AgentRole.BACKEND_ENGINEER, status=TaskStatus.PENDING,
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+
+    raw_response = json.dumps({
+        "files": [
+            {"path": "../../etc/cron.d/malicious", "content": "* * * * * evil", "language": "python"},
+            {"path": "app/safe.py", "content": "print('fine')", "language": "python"},
+        ],
+        "notes": "n/a",
+    })
+
+    agent = BackendEngineerAgent(session)
+    await agent.handle_response(task, raw_response)
+
+    result = await session.exec(select(GeneratedFile).where(GeneratedFile.project_id == project.id))
+    files = result.all()
+    assert {f.path for f in files} == {"app/safe.py"}
