@@ -10,12 +10,15 @@ git-tree/blob dance for what's usually a few dozen files).
 from __future__ import annotations
 
 import base64
+import re
+from urllib.parse import quote
 
 import httpx
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
+from app.core.safe_path import UnsafeGeneratedPath, safe_relative_path
 from app.db.models import GeneratedFile
 
 settings = get_settings()
@@ -24,6 +27,21 @@ API_BASE = "https://api.github.com"
 
 class GitHubExportError(Exception):
     pass
+
+
+# GitHub repo names allow letters, digits, hyphens, underscores, and
+# dots — anything else (spaces, slashes, control characters) either
+# gets silently mangled or breaks the request. Validating up front
+# gives a clear error instead of a confusing 422/404 from GitHub.
+_REPO_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+
+
+def _validate_repo_name(repo_name: str) -> str:
+    if not _REPO_NAME_RE.match(repo_name):
+        raise GitHubExportError(
+            "Repo name can only contain letters, numbers, dots, hyphens, and underscores."
+        )
+    return repo_name
 
 
 async def export_project_to_github(
@@ -40,6 +58,8 @@ async def export_project_to_github(
     back to `settings.github_export_token` (a server-side PAT) when the
     user didn't sign in with GitHub.
     """
+    repo_name = _validate_repo_name(repo_name)
+
     token = user_access_token or settings.github_export_token
     if not token:
         raise GitHubExportError(
@@ -72,11 +92,30 @@ async def export_project_to_github(
         repo = create_resp.json()
 
         pushed = 0
+        skipped = 0
         for f in files:
+            # f.path is LLM-generated and was previously interpolated
+            # straight into the URL: unescaped, a path containing "#",
+            # "?", or spaces silently truncates or misdirects the
+            # request, and a path starting with ".." or "/" could target
+            # an unintended location in the repo tree (GitHub's own API
+            # validation is the last line of defense there, but this
+            # app shouldn't be relying on that alone). Both issues are
+            # closed by validating the path with the same
+            # safe_relative_path() used for the sandbox and deployment
+            # writers, then percent-encoding each segment before it
+            # goes into the URL.
+            try:
+                safe_path = safe_relative_path(f.path)
+            except UnsafeGeneratedPath:
+                skipped += 1
+                continue
+            encoded_path = "/".join(quote(seg, safe="") for seg in safe_path.split("/"))
+
             content_b64 = base64.b64encode(f.content.encode("utf-8")).decode("ascii")
             put_resp = await client.put(
-                f"/repos/{owner}/{repo_name}/contents/{f.path}",
-                json={"message": f"Add {f.path} (via NEXUS)", "content": content_b64},
+                f"/repos/{owner}/{repo_name}/contents/{encoded_path}",
+                json={"message": f"Add {safe_path} (via NEXUS)", "content": content_b64},
             )
             if put_resp.status_code in (200, 201):
                 pushed += 1
@@ -88,4 +127,5 @@ async def export_project_to_github(
             "clone_url": repo["clone_url"],
             "files_pushed": pushed,
             "files_total": len(files),
+            "files_skipped_unsafe_path": skipped,
         }
