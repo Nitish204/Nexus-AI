@@ -22,7 +22,20 @@ class EventBus:
         return q
 
     def unsubscribe(self, project_id: str, q: asyncio.Queue) -> None:
-        self._subscribers[project_id].discard(q)
+        # `self._subscribers` is a defaultdict(set) — plain attribute
+        # access via `[project_id]` auto-vivifies an empty set entry
+        # for any project_id it's called with, including ones that
+        # already have zero subscribers. Every WebSocket disconnect
+        # was therefore leaving a permanent (if empty) dict entry
+        # behind, one per project ever opened, for the life of the
+        # process. Using .get() avoids creating that entry, and the
+        # dict key is dropped entirely once the set empties out.
+        subscribers = self._subscribers.get(project_id)
+        if subscribers is None:
+            return
+        subscribers.discard(q)
+        if not subscribers:
+            del self._subscribers[project_id]
 
     async def publish(self, project_id: str, event_type: str, payload: dict[str, Any]) -> None:
         message = json.dumps({"type": event_type, "payload": payload})
