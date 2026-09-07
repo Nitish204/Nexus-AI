@@ -30,7 +30,13 @@ ROUTE_PATTERN = re.compile(
     r"""@?\w*\.(?:get|post|put|delete|patch)\s*\(\s*["']([^"']+)["']"""
 )
 TABLE_PATTERN = re.compile(r"""(?:__tablename__\s*=\s*["'](\w+)["']|class\s+(\w+)\(.*Base.*\):)""")
-SQL_TABLE_HINT = re.compile(r"""(?:FROM|INTO|UPDATE)\s+["'`]?(\w+)["'`]?""", re.IGNORECASE)
+# Deliberately case-sensitive (no re.IGNORECASE): SQL keywords in
+# generated code are conventionally uppercase ("SELECT * FROM users"),
+# and matching case-insensitively made this collide with Python's own
+# lowercase `from` keyword — "from app.db import models" was being
+# misread as a SQL FROM clause and produced a bogus
+# ("app", "reads_or_writes_table") edge on every single import.
+SQL_TABLE_HINT = re.compile(r"""(?:FROM|INTO|UPDATE)\s+["'`]?(\w+)["'`]?""")
 
 
 def _extract_python_edges(file: GeneratedFile) -> list[tuple[str, str, str]]:
@@ -46,7 +52,16 @@ def _extract_python_edges(file: GeneratedFile) -> list[tuple[str, str, str]]:
             for alias in node.names:
                 edges.append((file.path, alias.name, "imports"))
         elif isinstance(node, ast.ImportFrom) and node.module:
-            edges.append((file.path, node.module, "imports"))
+            # Previously recorded only the module ("app.db" for
+            # "from app.db import models"), silently dropping which
+            # name(s) were actually imported. Resolving to the full
+            # dotted path per imported name ("app.db.models") makes the
+            # graph distinguish "imports the models module" from
+            # "imports the config module" when a file does
+            # `from app.db import models, config` — both used to
+            # collapse into one indistinguishable "app.db" edge.
+            for alias in node.names:
+                edges.append((file.path, f"{node.module}.{alias.name}", "imports"))
 
     for match in ROUTE_PATTERN.finditer(file.content):
         edges.append((file.path, match.group(1), "defines_api"))
