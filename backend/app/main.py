@@ -7,7 +7,18 @@ import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import analytics, api_keys, auth, code_review, deploy, github_export, graph, plugins, projects, public, push, ws
+from app.api import analytics, auth, code_review, deploy, github_export, graph, plugins, projects, push, ws
+# NOTE: `api_keys` and `public` routers were imported here but never
+# actually existed in app/api/ — this was a hard ImportError that
+# crashed the app on startup before it could even bind to a port.
+# They correspond to the still-unchecked roadmap item "Public,
+# API-key-authenticated read endpoints (separate from the cookie-based
+# web session)". Nothing in the frontend calls /api/public or an
+# api-keys endpoint today, so removing the import restores boot-ability
+# without silently faking a feature. Build these as a real, deliberate
+# feature (new ApiKey DB model, hashed key storage, its own auth
+# dependency) when you're ready to ship it — don't re-add the import
+# until the files exist.
 from app.core.config import get_settings
 from app.db.session import init_db
 
@@ -45,8 +56,6 @@ app.include_router(ws.router)
 app.include_router(github_export.router)
 app.include_router(code_review.router)
 app.include_router(plugins.router)
-app.include_router(api_keys.router)
-app.include_router(public.router)
 app.include_router(push.router)
 
 
