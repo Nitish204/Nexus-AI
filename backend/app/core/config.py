@@ -51,6 +51,15 @@ class Settings(BaseSettings):
 
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
+    # Only set this to True if NEXUS sits behind a proxy/load balancer
+    # (nginx, Render, an ALB, etc.) that you control and that overwrites
+    # X-Forwarded-For itself. If this is False (the default), the rate
+    # limiter ignores that header entirely and falls back to the
+    # socket's actual peer address — otherwise anyone can send a random
+    # X-Forwarded-For value on every request and dodge rate limiting
+    # completely, since the header is just attacker-supplied text.
+    trust_proxy_headers: bool = False
+
     @property
     def allowed_origins_list(self) -> list[str]:
         raw = self.allowed_origins.strip()
