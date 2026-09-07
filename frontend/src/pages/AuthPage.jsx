@@ -1,7 +1,16 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Float, MeshDistortMaterial, Sparkles, Environment } from "@react-three/drei";
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from "react";
 import { API_BASE } from "../utils/api";
+
+// Bug fix (bundle size): three.js + @react-three/fiber + @react-three/drei
+// were imported directly at the top of this file, meaning every single
+// visitor — including someone who bounces before ever signing up —
+// downloaded and parsed the full 3D engine before the sign-in form
+// could even paint. This is the actual source of the >1MB single-chunk
+// build warning, not Monaco (which @monaco-editor/react loads lazily
+// from a CDN on its own). Wrapping the 3D scene in React.lazy() lets
+// the HTML form render immediately; the animated background streams in
+// a moment after, which is the right trade for something decorative.
+const Scene = lazy(() => import("./AuthScene.jsx"));
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
@@ -20,90 +29,6 @@ function friendlyError(err) {
     return "Couldn't reach the server. It may be offline or still deploying — please try again in a moment.";
   }
   return msg || "Something went wrong.";
-}
-
-function CenterGem({ pointer }) {
-  const meshRef = useRef();
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime();
-    if (meshRef.current) {
-      meshRef.current.rotation.y = t * 0.25 + pointer.current.x * 0.7;
-      meshRef.current.rotation.x = Math.sin(t * 0.3) * 0.2 + pointer.current.y * 0.5;
-      const s = 1 + Math.sin(t * 1.1) * 0.06;
-      meshRef.current.scale.set(s, s, s);
-    }
-  });
-  return (
-    <Float speed={2.2} rotationIntensity={0.6} floatIntensity={1.4}>
-      <mesh ref={meshRef}>
-        <icosahedronGeometry args={[1.5, 8]} />
-        <MeshDistortMaterial
-          color="#ff5fa2"
-          emissive="#ff2d92"
-          emissiveIntensity={0.35}
-          roughness={0.15}
-          metalness={0.6}
-          distort={0.45}
-          speed={2.2}
-        />
-      </mesh>
-    </Float>
-  );
-}
-
-function OrbitGem({ radius, offset, scale, color, speed }) {
-  const groupRef = useRef();
-  const meshRef = useRef();
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime() * speed + offset;
-    if (groupRef.current) {
-      groupRef.current.position.x = Math.cos(t) * radius;
-      groupRef.current.position.z = Math.sin(t) * radius;
-      groupRef.current.position.y = Math.sin(t * 1.4) * 0.6;
-    }
-    if (meshRef.current) {
-      meshRef.current.rotation.x += 0.01;
-      meshRef.current.rotation.y += 0.014;
-    }
-  });
-  return (
-    <group ref={groupRef}>
-      <Float speed={3} rotationIntensity={1} floatIntensity={1.6}>
-        <mesh ref={meshRef} scale={scale}>
-          <octahedronGeometry args={[1, 0]} />
-          <MeshDistortMaterial color={color} emissive={color} emissiveIntensity={0.4} distort={0.3} speed={3} roughness={0.2} metalness={0.4} />
-        </mesh>
-      </Float>
-    </group>
-  );
-}
-
-function Scene() {
-  const pointer = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const handleMove = (e) => {
-      pointer.current.x = (e.clientX / window.innerWidth) * 2 - 1;
-      pointer.current.y = (e.clientY / window.innerHeight) * 2 - 1;
-    };
-    window.addEventListener("pointermove", handleMove);
-    return () => window.removeEventListener("pointermove", handleMove);
-  }, []);
-
-  return (
-    <Canvas camera={{ position: [0, 0, 6], fov: 50 }}>
-      <ambientLight intensity={0.9} />
-      <pointLight position={[4, 4, 4]} intensity={2} color="#ffd166" />
-      <pointLight position={[-4, -2, 3]} intensity={1.6} color="#ff5fa2" />
-      <pointLight position={[0, -3, -3]} intensity={1} color="#8b5cf6" />
-      <CenterGem pointer={pointer} />
-      <OrbitGem radius={3.4} offset={0} scale={0.35} color="#ffd166" speed={0.6} />
-      <OrbitGem radius={2.8} offset={2.1} scale={0.25} color="#8b5cf6" speed={0.8} />
-      <OrbitGem radius={3.9} offset={4.2} scale={0.3} color="#4dd8ff" speed={0.5} />
-      <Sparkles count={80} scale={9} size={3} speed={0.5} color="#ffffff" opacity={0.6} />
-      <Environment preset="sunset" />
-    </Canvas>
-  );
 }
 
 export default function AuthPage({ onAuthenticated }) {
@@ -401,7 +326,9 @@ export default function AuthPage({ onAuthenticated }) {
       `}</style>
 
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <Scene />
+        <Suspense fallback={null}>
+          <Scene />
+        </Suspense>
       </div>
 
       <div
