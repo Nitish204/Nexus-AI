@@ -3,7 +3,7 @@ Actual cloud deployment (Phase 5) is triggered separately by the
 DeploymentService, which consumes the Dockerfile this agent produces."""
 
 from app.agents.base import AgentBase, parse_agent_json
-from app.db.models import AgentRole, GeneratedFile, Task
+from app.db.models import AgentRole, Task
 
 DEVOPS_SYSTEM_PROMPT = """You are the DevOps Engineer agent inside NEXUS.
 Given the existing project files, produce containerization and CI/CD
@@ -31,10 +31,10 @@ class DevOpsEngineerAgent(AgentBase):
     async def handle_response(self, task: Task, raw_text: str) -> None:
         data = parse_agent_json(raw_text)
         for f in data["files"]:
-            self.session.add(GeneratedFile(
-                project_id=task.project_id, path=f["path"], content=f["content"],
-                language=f.get("language", "dockerfile"), written_by=self.role,
-            ))
-            await self._log(task, f["content"], "code")
+            written = await self._write_generated_file(
+                task.project_id, f["path"], f["content"], f.get("language", "dockerfile")
+            )
+            if written is not None:
+                await self._log(task, f["content"], "code")
         await self.session.commit()
         await self._log(task, data.get("notes", "DevOps artifacts generated."), "status")
