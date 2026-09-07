@@ -2,7 +2,7 @@
 that consume whatever API the BackendEngineerAgent has already produced."""
 
 from app.agents.base import AgentBase, parse_agent_json
-from app.db.models import AgentRole, GeneratedFile, Task
+from app.db.models import AgentRole, Task
 
 FRONTEND_SYSTEM_PROMPT = """You are the Frontend Engineer agent inside NEXUS.
 Given a task and the existing backend files as context, generate React
@@ -30,10 +30,10 @@ class FrontendEngineerAgent(AgentBase):
     async def handle_response(self, task: Task, raw_text: str) -> None:
         data = parse_agent_json(raw_text)
         for f in data["files"]:
-            self.session.add(GeneratedFile(
-                project_id=task.project_id, path=f["path"], content=f["content"],
-                language=f.get("language", "javascript"), written_by=self.role,
-            ))
-            await self._log(task, f["content"], "code")
+            written = await self._write_generated_file(
+                task.project_id, f["path"], f["content"], f.get("language", "javascript")
+            )
+            if written is not None:
+                await self._log(task, f["content"], "code")
         await self.session.commit()
         await self._log(task, data.get("notes", "Frontend implementation complete."), "status")
