@@ -44,12 +44,35 @@ def _validate_password_strength(password: str) -> str:
     return password
 
 
+def _normalize_email(v: str) -> str:
+    """
+    Every email read or write in this file now goes through this.
+    Previously, nothing normalized case: Postgres text comparison is
+    case-sensitive by default, so `Bob@Gmail.com` at signup and
+    `bob@gmail.com` at login were treated as two different values
+    entirely. That meant a correct password could still get "Invalid
+    email or password" purely from a casing mismatch, the "account
+    already exists" signup check could be bypassed by varying case, and
+    worst of all: someone who signed up locally as `Bob@Gmail.com` and
+    later used "Sign in with Google" (which returns lowercase) would
+    silently get a brand-new, second account instead of their existing
+    one — Google/GitHub OAuth and password login could never find each
+    other's accounts for the same real email.
+    """
+    return v.strip().lower()
+
+
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
     name: str = ""
     security_question: str
     security_answer: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
 
     @field_validator("password")
     @classmethod
@@ -60,6 +83,11 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
 
 
 class GoogleLoginRequest(BaseModel):
@@ -74,6 +102,11 @@ class DirectResetPasswordRequest(BaseModel):
     email: EmailStr
     security_answer: str
     new_password: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_email(v)
 
     @field_validator("new_password")
     @classmethod
@@ -161,6 +194,7 @@ async def logout(response: Response):
 
 @router.get("/security-question")
 async def get_security_question(email: EmailStr, request: Request, session: AsyncSession = Depends(get_session)):
+    email = _normalize_email(email)
     enforce(security_answer_limiter, request, extra_key="enum")
     user = (await session.exec(select(User).where(User.email == email))).first()
     if not user or not user.security_question:
@@ -207,6 +241,7 @@ async def google_login(
         raise HTTPException(401, "Google account email is not verified.")
 
     email = data["email"]
+    email = _normalize_email(email)
     user = (await session.exec(select(User).where(User.email == email))).first()
     if not user:
         user = User(
@@ -258,6 +293,7 @@ async def github_login(
             emails = emails_resp.json()
             primary = next((e for e in emails if e.get("primary")), emails[0] if emails else None)
             email = primary["email"] if primary else f"{gh_user['login']}@users.noreply.github.com"
+        email = _normalize_email(email)
 
     user = (await session.exec(select(User).where(User.email == email))).first()
     if not user:
