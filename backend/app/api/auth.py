@@ -145,7 +145,7 @@ def _issue(user: User) -> dict:
 async def signup(
     request: Request, response: Response, body: SignupRequest, session: AsyncSession = Depends(get_session)
 ):
-    enforce(signup_limiter, request)
+    await enforce(signup_limiter, request)
     existing = (await session.exec(select(User).where(User.email == body.email))).first()
     if existing:
         raise HTTPException(400, "An account with this email already exists.")
@@ -169,7 +169,7 @@ async def signup(
 async def login(
     request: Request, response: Response, body: LoginRequest, session: AsyncSession = Depends(get_session)
 ):
-    enforce(login_limiter, request, extra_key=body.email.lower())
+    await enforce(login_limiter, request, extra_key=body.email.lower())
     user = (await session.exec(select(User).where(User.email == body.email))).first()
     if not user:
         raise HTTPException(401, "Invalid email or password.")
@@ -195,7 +195,7 @@ async def logout(response: Response):
 @router.get("/security-question")
 async def get_security_question(email: EmailStr, request: Request, session: AsyncSession = Depends(get_session)):
     email = _normalize_email(email)
-    enforce(security_answer_limiter, request, extra_key="enum")
+    await enforce(security_answer_limiter, request, extra_key="enum")
     user = (await session.exec(select(User).where(User.email == email))).first()
     if not user or not user.security_question:
         raise HTTPException(
@@ -210,7 +210,7 @@ async def get_security_question(email: EmailStr, request: Request, session: Asyn
 async def reset_password_direct(
     request: Request, body: DirectResetPasswordRequest, session: AsyncSession = Depends(get_session)
 ):
-    enforce(security_answer_limiter, request, extra_key=body.email.lower())
+    await enforce(security_answer_limiter, request, extra_key=body.email.lower())
     user = (await session.exec(select(User).where(User.email == body.email))).first()
     if not user or not user.security_answer_hash:
         raise HTTPException(400, "No security question is set up for that email.")
@@ -227,7 +227,7 @@ async def reset_password_direct(
 async def google_login(
     request: Request, response: Response, body: GoogleLoginRequest, session: AsyncSession = Depends(get_session)
 ):
-    enforce(login_limiter, request, extra_key="google")
+    await enforce(login_limiter, request, extra_key="google")
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://oauth2.googleapis.com/tokeninfo", params={"id_token": body.id_token}
@@ -262,7 +262,7 @@ async def google_login(
 async def github_login(
     request: Request, response: Response, body: GitHubLoginRequest, session: AsyncSession = Depends(get_session)
 ):
-    enforce(login_limiter, request, extra_key="github")
+    await enforce(login_limiter, request, extra_key="github")
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
             "https://github.com/login/oauth/access_token",
