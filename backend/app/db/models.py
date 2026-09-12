@@ -9,6 +9,12 @@ every decision an agent made is a row in a table, not a lost function call.
 import enum
 import uuid
 from datetime import datetime, timezone
+from typing import List  # not list[...] — SQLModel/Pydantic must actually
+                          # evaluate field annotations to build the schema
+                          # (unlike a decorative function return type),
+                          # and list[...] (PEP 585) genuinely doesn't exist
+                          # on Python 3.8 at all — typing.List works
+                          # identically from Python 3.5 through 3.13+.
 
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON, DateTime
@@ -71,8 +77,8 @@ class Project(SQLModel, table=True):
     created_at: datetime = utc_datetime_field()
     updated_at: datetime = utc_datetime_field()
 
-    tasks: list["Task"] = Relationship(back_populates="project")
-    files: list["GeneratedFile"] = Relationship(back_populates="project")
+    tasks: List["Task"] = Relationship(back_populates="project")
+    files: List["GeneratedFile"] = Relationship(back_populates="project")
 
 
 class Task(SQLModel, table=True):
@@ -82,13 +88,13 @@ class Task(SQLModel, table=True):
     description: str
     assigned_role: AgentRole
     status: TaskStatus = TaskStatus.PENDING
-    depends_on: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    depends_on: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     result_summary: str = ""
     created_at: datetime = utc_datetime_field()
     updated_at: datetime = utc_datetime_field()
 
     project: Project = Relationship(back_populates="tasks")
-    messages: list["AgentMessage"] = Relationship(back_populates="task")
+    messages: List["AgentMessage"] = Relationship(back_populates="task")
 
 
 class AgentMessage(SQLModel, table=True):
