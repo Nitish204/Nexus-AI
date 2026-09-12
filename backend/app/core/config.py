@@ -1,6 +1,8 @@
 """
 NEXUS — Central configuration.
 """
+from __future__ import annotations  # lets `list[str]` type hints work on Python 3.8 too — see allowed_origins_list below
+
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
