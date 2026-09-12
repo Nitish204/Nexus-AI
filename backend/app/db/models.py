@@ -9,12 +9,13 @@ every decision an agent made is a row in a table, not a lost function call.
 import enum
 import uuid
 from datetime import datetime, timezone
-from typing import List  # not list[...] — SQLModel/Pydantic must actually
+from typing import List, Optional  # not list[...]/X | None — SQLModel/Pydantic must actually
                           # evaluate field annotations to build the schema
                           # (unlike a decorative function return type),
-                          # and list[...] (PEP 585) genuinely doesn't exist
-                          # on Python 3.8 at all — typing.List works
-                          # identically from Python 3.5 through 3.13+.
+                          # and list[...] (PEP 585, 3.9+) / X | None (PEP 604,
+                          # 3.10+) genuinely don't exist on Python 3.8 at all —
+                          # typing.List/typing.Optional work identically from
+                          # Python 3.5 through 3.13+.
 
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON, DateTime
@@ -59,12 +60,12 @@ class User(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     email: str = Field(index=True, unique=True)
     name: str = ""
-    password_hash: str | None = None  # null for OAuth-only users
+    password_hash: Optional[str] = None  # null for OAuth-only users
     provider: AuthProvider = AuthProvider.LOCAL
     avatar_url: str = ""
     created_at: datetime = utc_datetime_field()
-    security_question: str | None = None
-    security_answer_hash: str | None = None
+    security_question: Optional[str] = None
+    security_answer_hash: Optional[str] = None
     is_admin: bool = False
 
 
@@ -153,8 +154,8 @@ class Plugin(SQLModel, table=True):
     config: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = utc_datetime_field()
     status: str = "approved"  # pending | approved | rejected
-    submitted_by: str | None = Field(default=None, foreign_key="user.id")
-    reviewed_by: str | None = Field(default=None, foreign_key="user.id")
+    submitted_by: Optional[str] = Field(default=None, foreign_key="user.id")
+    reviewed_by: Optional[str] = Field(default=None, foreign_key="user.id")
     review_note: str = ""
 
 
@@ -165,7 +166,7 @@ class ApiKey(SQLModel, table=True):
     key_hash: str = Field(index=True, unique=True)
     key_prefix: str
     created_at: datetime = utc_datetime_field()
-    last_used_at: datetime | None = None
+    last_used_at: Optional[datetime] = None
     revoked: bool = False
 
 
