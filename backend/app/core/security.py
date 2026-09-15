@@ -49,14 +49,26 @@ def verify_security_answer(answer: str, answer_hash: str) -> bool:
 def create_access_token(user_id: str, expires_minutes: int | None = None) -> str:
     minutes = expires_minutes if expires_minutes is not None else settings.access_token_expire_minutes
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    payload = {"sub": user_id, "exp": expire}
+    # `jti` (JWT ID) — a unique identifier for THIS specific token, not
+    # the user. Needed so logout can revoke exactly one session without
+    # affecting any of the user's other logged-in devices/browsers, and
+    # so the revoked-list only ever needs to remember "this one token",
+    # not "this user's tokens" (which would require tracking every
+    # token ever issued to look them up later).
+    payload = {"sub": user_id, "exp": expire, "jti": secrets.token_urlsafe(16)}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> str | None:
+def decode_access_token(token: str) -> dict | None:
+    """
+    Returns the full decoded payload ({"sub", "exp", "jti"}) rather than
+    just the user id, so callers can check the token's jti against the
+    revocation list (see app/core/token_revocation.py) — a token that's
+    cryptographically valid and unexpired can still have been explicitly
+    logged out early, and callers need the jti to check that.
+    """
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        return payload.get("sub")
+        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError:
         return None
 
