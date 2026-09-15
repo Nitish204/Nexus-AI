@@ -11,6 +11,7 @@ as a Bearer header, exactly as before. Both paths are accepted by
 `get_current_user_id` in api/projects.py.
 """
 import httpx
+import time
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlmodel import select
@@ -18,6 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
 from app.core.rate_limit import enforce, login_limiter, security_answer_limiter, signup_limiter
+from app.core.token_revocation import revoke_token, is_token_revoked
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -187,7 +189,24 @@ async def login(
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response, authorization: str | None = Header(default=None)):
+    # Actually revoke the current token, not just delete the cookie —
+    # see app/core/token_revocation.py for why that distinction matters.
+    # Same dual bearer-header/cookie handling as get_current_user_id in
+    # api/projects.py, since logout needs to find the same token that
+    # would've authenticated this request either way.
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    else:
+        token = request.cookies.get("nexus_session")
+
+    if token:
+        payload = decode_access_token(token)
+        if payload and payload.get("jti"):
+            remaining_seconds = int(payload["exp"] - time.time())
+            await revoke_token(payload["jti"], remaining_seconds)
+
     _clear_session_cookies(response)
     return {"status": "logged_out"}
 
@@ -311,24 +330,26 @@ async def github_login(
     return result
 
 
-def _resolve_user_id(request: Request, authorization: str | None) -> str:
+async def _resolve_user_id(request: Request, authorization: str | None) -> str:
     if authorization and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ").strip()
     else:
         token = request.cookies.get("nexus_session")
     if not token:
         raise HTTPException(401, "Missing authentication.")
-    user_id = decode_access_token(token)
-    if not user_id:
+    payload = decode_access_token(token)
+    if not payload:
         raise HTTPException(401, "Invalid or expired token.")
-    return user_id
+    if await is_token_revoked(payload.get("jti")):
+        raise HTTPException(401, "This session has been signed out. Please sign in again.")
+    return payload["sub"]
 
 
 @router.get("/me")
 async def get_me(
     request: Request, authorization: str | None = Header(default=None), session: AsyncSession = Depends(get_session)
 ):
-    user_id = _resolve_user_id(request, authorization)
+    user_id = await _resolve_user_id(request, authorization)
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(401, "User not found.")
@@ -337,5 +358,5 @@ async def get_me(
 
 @router.get("/ws-token")
 async def get_ws_token(request: Request, authorization: str | None = Header(default=None)):
-    user_id = _resolve_user_id(request, authorization)
+    user_id = await _resolve_user_id(request, authorization)
     return {"ws_token": create_access_token(user_id, expires_minutes=WS_TOKEN_MINUTES)}
