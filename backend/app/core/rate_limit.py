@@ -32,26 +32,15 @@ import logging
 import time
 from collections import defaultdict
 
-import redis.asyncio as aioredis
 from fastapi import HTTPException, Request
 
 from app.core.config import get_settings
+from app.core.redis_client import redis_client as _redis_client
 
 settings = get_settings()
 logger = logging.getLogger("nexus.rate_limit")
 
 _SWEEP_INTERVAL_SECONDS = 600  # in-memory fallback's own housekeeping, see RateLimiter._sweep
-
-# One shared Redis client for the whole process. redis-py's async client
-# is lazy — creating it does not open a network connection by itself;
-# the connection is only actually attempted on the first real command,
-# and every subsequent command reuses the pool. A short timeout keeps a
-# genuinely-down Redis from making every request hang.
-_redis_client: aioredis.Redis | None = None
-if settings.redis_url:
-    _redis_client = aioredis.from_url(
-        settings.redis_url, socket_connect_timeout=1.5, socket_timeout=1.5,
-    )
 
 
 class RateLimiter:
