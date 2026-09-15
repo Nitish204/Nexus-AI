@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.security import decode_access_token
+from app.core.token_revocation import is_token_revoked
 from app.db.models import AgentMessage, AnalysisResult, GeneratedFile, GraphEdge, Project, Task, Deployment
 from app.db.session import get_session, get_session_context
 from app.services.orchestrator import Orchestrator
@@ -47,17 +48,22 @@ async def get_current_user_id(request: Request, authorization: str | None = Head
     """
     if authorization and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ").strip()
-        user_id = decode_access_token(token)
-        if not user_id:
+        payload = decode_access_token(token)
+        if not payload:
             raise HTTPException(401, "Invalid or expired token.")
-        return user_id
+        if await is_token_revoked(payload.get("jti")):
+            raise HTTPException(401, "This session has been signed out. Please sign in again.")
+        return payload["sub"]
 
     token = request.cookies.get("nexus_session")
     if not token:
         raise HTTPException(401, "Missing authentication.")
-    user_id = decode_access_token(token)
-    if not user_id:
+    payload = decode_access_token(token)
+    if not payload:
         raise HTTPException(401, "Invalid or expired token.")
+    if await is_token_revoked(payload.get("jti")):
+        raise HTTPException(401, "This session has been signed out. Please sign in again.")
+    user_id = payload["sub"]
 
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         csrf_cookie = request.cookies.get("nexus_csrf")
