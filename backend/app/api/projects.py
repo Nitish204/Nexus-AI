@@ -28,6 +28,28 @@ class CommandRequest(BaseModel):
     text: str
 
 
+async def _validate_session_payload(payload: dict) -> str:
+    """
+    Shared by both auth entry points (this function and
+    api/auth.py's _resolve_user_id) so there's exactly one place that
+    decides a decoded token payload is actually a valid, current
+    session — not two copies that could quietly drift apart.
+
+    Explicitly rejects a 2FA-pending token (see
+    core/security.create_2fa_pending_token): that token intentionally
+    carries no `jti`, and is_token_revoked() treats a missing jti as
+    "nothing to check, not revoked" — without this explicit purpose
+    check, a pending-2FA token would be silently usable as a real,
+    fully-authenticated session before the user ever entered their
+    second factor, which would defeat the entire point of 2FA.
+    """
+    if payload.get("purpose") == "2fa_pending":
+        raise HTTPException(401, "Invalid or expired token.")
+    if await is_token_revoked(payload.get("jti")):
+        raise HTTPException(401, "This session has been signed out. Please sign in again.")
+    return payload["sub"]
+
+
 async def get_current_user_id(request: Request, authorization: str | None = Header(default=None)) -> str:
     """
     Two auth paths, both landing here:
@@ -51,9 +73,7 @@ async def get_current_user_id(request: Request, authorization: str | None = Head
         payload = decode_access_token(token)
         if not payload:
             raise HTTPException(401, "Invalid or expired token.")
-        if await is_token_revoked(payload.get("jti")):
-            raise HTTPException(401, "This session has been signed out. Please sign in again.")
-        return payload["sub"]
+        return await _validate_session_payload(payload)
 
     token = request.cookies.get("nexus_session")
     if not token:
@@ -61,9 +81,7 @@ async def get_current_user_id(request: Request, authorization: str | None = Head
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(401, "Invalid or expired token.")
-    if await is_token_revoked(payload.get("jti")):
-        raise HTTPException(401, "This session has been signed out. Please sign in again.")
-    user_id = payload["sub"]
+    user_id = await _validate_session_payload(payload)
 
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         csrf_cookie = request.cookies.get("nexus_csrf")
