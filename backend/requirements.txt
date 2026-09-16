@@ -7,6 +7,7 @@ alembic==1.13.2
 openai==1.51.0
 pydantic-settings==2.5.2
 python-jose[cryptography]==3.3.0
+pyotp==2.10.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 json-repair==0.62.0
