@@ -125,6 +125,12 @@ def _client_ip(request: Request) -> str:
 login_limiter = RateLimiter(max_attempts=8, window_seconds=300, name="login")
 signup_limiter = RateLimiter(max_attempts=5, window_seconds=3600, name="signup")
 security_answer_limiter = RateLimiter(max_attempts=6, window_seconds=600, name="security_answer")
+# Deliberately strict: a TOTP code is only 6 digits (1,000,000
+# possibilities, or effectively 3-in-1,000,000 per attempt given the
+# ±1 step clock-drift tolerance in verify_totp_code) — an endpoint that
+# checks these needs meaningfully tighter brute-force protection than a
+# password does, not the same budget as a full-length password.
+totp_limiter = RateLimiter(max_attempts=5, window_seconds=300, name="totp")
 
 
 async def enforce(limiter: RateLimiter, request: Request, extra_key: str = "") -> None:
