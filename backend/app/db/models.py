@@ -67,6 +67,17 @@ class User(SQLModel, table=True):
     security_question: Optional[str] = None
     security_answer_hash: Optional[str] = None
     is_admin: bool = False
+    # Two-factor auth (TOTP). totp_secret is set as soon as setup begins
+    # but totp_enabled stays False until the user proves they actually
+    # configured their authenticator app correctly (see POST
+    # /api/auth/2fa/enable) — this avoids a user getting locked out of
+    # their own account from a setup flow they never finished.
+    # totp_backup_codes stores HASHES only (bcrypt_sha256, same as
+    # passwords), one-time-use, JSON-encoded list — never the raw codes,
+    # which are shown to the user exactly once at generation time.
+    totp_secret: Optional[str] = None
+    totp_enabled: bool = False
+    totp_backup_codes: Optional[str] = None  # JSON list of hashes
 
 
 class Project(SQLModel, table=True):
