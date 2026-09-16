@@ -11,6 +11,7 @@ as a Bearer header, exactly as before. Both paths are accepted by
 `get_current_user_id` in api/projects.py.
 """
 import httpx
+import json
 import time
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, field_validator
@@ -18,16 +19,25 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
-from app.core.rate_limit import enforce, login_limiter, security_answer_limiter, signup_limiter
+from app.core.rate_limit import enforce, login_limiter, security_answer_limiter, signup_limiter, totp_limiter
 from app.core.token_revocation import revoke_token, is_token_revoked
+from app.api.projects import _validate_session_payload, get_current_user_id
 from app.core.security import (
     create_access_token,
+    create_2fa_pending_token,
+    decode_2fa_pending_token,
     decode_access_token,
+    generate_backup_codes,
     generate_csrf_token,
+    generate_totp_secret,
+    hash_backup_code,
     hash_password,
     hash_security_answer,
+    totp_provisioning_uri,
+    verify_backup_code,
     verify_password,
     verify_security_answer,
+    verify_totp_code,
 )
 from app.db.models import AuthProvider, User
 from app.db.session import get_session
@@ -183,6 +193,15 @@ async def login(
         )
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password.")
+
+    if user.totp_enabled:
+        # Password was correct, but that alone isn't a completed login
+        # for a 2FA account. Issue only the short-lived pending token —
+        # see create_2fa_pending_token's docstring for why this can
+        # never be mistaken for (or used as) a real session — and make
+        # the client call /2fa/verify next with the user's 6-digit code.
+        return {"requires_2fa": True, "pending_token": create_2fa_pending_token(user.id)}
+
     result = _issue(user)
     _set_session_cookies(response, result["access_token"])
     return result
@@ -209,6 +228,131 @@ async def logout(request: Request, response: Response, authorization: str | None
 
     _clear_session_cookies(response)
     return {"status": "logged_out"}
+
+
+# ---------------------------------------------------------------------
+# Two-factor auth (TOTP)
+# ---------------------------------------------------------------------
+
+class TwoFAEnableRequest(BaseModel):
+    code: str
+
+
+class TwoFADisableRequest(BaseModel):
+    password: str
+
+
+class TwoFAVerifyRequest(BaseModel):
+    pending_token: str
+    code: str
+
+
+@router.post("/2fa/setup")
+async def setup_2fa(user_id: str = Depends(get_current_user_id), session: AsyncSession = Depends(get_session)):
+    """
+    Generates a new secret and backup codes, but does NOT enable 2FA
+    yet — see POST /2fa/enable, which requires proving the authenticator
+    app was actually configured correctly first. Calling this again
+    before enabling simply replaces the pending secret/codes; calling
+    it on an account that already has 2FA enabled starts a fresh
+    setup that only takes effect once /2fa/enable is called again,
+    without disabling the currently-active 2FA in the meantime.
+    """
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found.")
+
+    secret = generate_totp_secret()
+    backup_codes = generate_backup_codes()
+
+    user.totp_secret = secret
+    user.totp_backup_codes = json.dumps([hash_backup_code(c) for c in backup_codes])
+    session.add(user)
+    await session.commit()
+
+    return {
+        "secret": secret,
+        "provisioning_uri": totp_provisioning_uri(secret, user.email),
+        # Shown exactly once — only hashes are stored from here on.
+        "backup_codes": backup_codes,
+    }
+
+
+@router.post("/2fa/enable")
+async def enable_2fa(
+    request: Request,
+    body: TwoFAEnableRequest,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    await enforce(totp_limiter, request, extra_key=user_id)
+    user = await session.get(User, user_id)
+    if not user or not user.totp_secret:
+        raise HTTPException(400, "Call /2fa/setup first.")
+    if not verify_totp_code(user.totp_secret, body.code):
+        raise HTTPException(401, "Incorrect code. Check your authenticator app and try again.")
+
+    user.totp_enabled = True
+    session.add(user)
+    await session.commit()
+    return {"status": "2fa_enabled"}
+
+
+@router.post("/2fa/disable")
+async def disable_2fa(
+    body: TwoFADisableRequest,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found.")
+    if not user.password_hash or not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Incorrect password.")
+
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_backup_codes = None
+    session.add(user)
+    await session.commit()
+    return {"status": "2fa_disabled"}
+
+
+@router.post("/2fa/verify")
+async def verify_2fa(
+    request: Request, response: Response, body: TwoFAVerifyRequest, session: AsyncSession = Depends(get_session)
+):
+    """Completes a login that /login paused for 2FA. Accepts either a
+    live 6-digit TOTP code or one of the one-time backup codes."""
+    user_id = decode_2fa_pending_token(body.pending_token)
+    if not user_id:
+        raise HTTPException(401, "This login attempt has expired. Please sign in again.")
+
+    await enforce(totp_limiter, request, extra_key=user_id)
+
+    user = await session.get(User, user_id)
+    if not user or not user.totp_enabled or not user.totp_secret:
+        raise HTTPException(401, "This login attempt has expired. Please sign in again.")
+
+    if verify_totp_code(user.totp_secret, body.code):
+        result = _issue(user)
+        _set_session_cookies(response, result["access_token"])
+        return result
+
+    # Not a valid TOTP code — try it as a one-time backup code instead.
+    backup_hashes = json.loads(user.totp_backup_codes) if user.totp_backup_codes else []
+    for i, code_hash in enumerate(backup_hashes):
+        if verify_backup_code(body.code, code_hash):
+            # One-time use: remove it so it can't be replayed.
+            del backup_hashes[i]
+            user.totp_backup_codes = json.dumps(backup_hashes)
+            session.add(user)
+            await session.commit()
+            result = _issue(user)
+            _set_session_cookies(response, result["access_token"])
+            return result
+
+    raise HTTPException(401, "Incorrect code.")
 
 
 @router.get("/security-question")
@@ -340,9 +484,7 @@ async def _resolve_user_id(request: Request, authorization: str | None) -> str:
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(401, "Invalid or expired token.")
-    if await is_token_revoked(payload.get("jti")):
-        raise HTTPException(401, "This session has been signed out. Please sign in again.")
-    return payload["sub"]
+    return await _validate_session_payload(payload)
 
 
 @router.get("/me")
