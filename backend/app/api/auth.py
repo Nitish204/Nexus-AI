@@ -12,7 +12,9 @@ as a Bearer header, exactly as before. Both paths are accepted by
 """
 import httpx
 import json
+import logging
 import time
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlmodel import select
@@ -41,9 +43,21 @@ from app.core.security import (
 )
 from app.db.models import AuthProvider, User
 from app.db.session import get_session
+from app.services.push_notifications import send_push_to_user
+
+logger = logging.getLogger("nexus.auth")
 
 settings = get_settings()
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# 10 total wrong guesses (not per-window like the rate limiter — this
+# accumulates until a successful login resets it) before the account
+# itself locks, regardless of which IP(s) the guesses came from. 30
+# minutes is deliberately long enough to be a real deterrent against
+# automated guessing but short enough that a genuine user who mistyped
+# their password several times isn't locked out for the whole day.
+ACCOUNT_LOCKOUT_THRESHOLD = 10
+ACCOUNT_LOCKOUT_MINUTES = 30
 
 MIN_PASSWORD_LENGTH = 8
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
@@ -191,8 +205,73 @@ async def login(
             "This account was created with Google or GitHub and has no password yet. "
             "Use 'Forgot password?' to set one, or continue with Google/GitHub.",
         )
+
+    # Checked BEFORE verifying the password on purpose: once an account
+    # is locked, even a genuinely correct password must not succeed
+    # until the lockout expires. This is the actual behavioral
+    # difference from rate limiting (which only slows down attempt
+    # speed, not this specific already-authenticated-looking request).
+    now = datetime.now(timezone.utc)
+    locked_until = user.locked_until
+    if locked_until is not None and locked_until.tzinfo is None:
+        # SQLite has no native timezone-aware timestamp type at all —
+        # DateTime(timezone=True) is effectively a no-op there, and a
+        # value written as UTC-aware comes back naive on round-trip
+        # regardless of the column declaration (confirmed directly:
+        # this is not a hypothetical). Production Postgres genuinely
+        # preserves the timezone, but normalizing here defensively —
+        # rather than assuming the driver always behaves — means this
+        # can never crash with "can't compare offset-naive and
+        # offset-aware datetimes" on every single login attempt for a
+        # locked account, in any environment, for any reason. Every
+        # value this app ever writes to this column is already UTC
+        # (see `now` above), so treating a naive read-back as UTC is
+        # correct, not a guess.
+        locked_until = locked_until.replace(tzinfo=timezone.utc)
+    if locked_until and locked_until > now:
+        minutes_left = max(1, int((locked_until - now).total_seconds() // 60) + 1)
+        raise HTTPException(
+            423,  # 423 Locked — the correct status for "the resource itself is locked", distinct from 401
+            f"This account is temporarily locked after repeated failed sign-in attempts. "
+            f"Try again in about {minutes_left} minute(s).",
+        )
+
     if not verify_password(body.password, user.password_hash):
+        user.failed_login_count += 1
+        if user.failed_login_count >= ACCOUNT_LOCKOUT_THRESHOLD:
+            user.locked_until = now + timedelta(minutes=ACCOUNT_LOCKOUT_MINUTES)
+            # Reset the counter once locked — the next block of attempts
+            # (after the lockout expires) starts counting fresh, rather
+            # than the lock re-triggering instantly on the very next
+            # single wrong guess.
+            user.failed_login_count = 0
+        session.add(user)
+        await session.commit()
+
+        if user.locked_until:
+            # Best-effort — only reaches a device where the user
+            # previously granted push permission (see the module
+            # docstring on send_push_to_user for the trade-off vs.
+            # email). Lockout itself has already happened and doesn't
+            # depend on this succeeding; a failed/skipped notification
+            # here must never block or fail the login response itself.
+            try:
+                await send_push_to_user(
+                    session, user.id, "Account locked",
+                    f"Your Nexus account was locked for {ACCOUNT_LOCKOUT_MINUTES} minutes after "
+                    f"{ACCOUNT_LOCKOUT_THRESHOLD} failed sign-in attempts. If this wasn't you, "
+                    f"consider changing your password once it unlocks.",
+                    url="/settings/security",
+                )
+            except Exception as exc:
+                logger.warning("Failed to send account-lockout push alert for user %s: %s", user.id, exc)
         raise HTTPException(401, "Invalid email or password.")
+
+    if user.failed_login_count > 0 or user.locked_until:
+        user.failed_login_count = 0
+        user.locked_until = None
+        session.add(user)
+        await session.commit()
 
     if user.totp_enabled:
         # Password was correct, but that alone isn't a completed login
