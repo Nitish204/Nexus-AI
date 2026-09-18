@@ -31,33 +31,32 @@ def _send_one(payload: str, sub: PushSubscription) -> None:
     )
 
 
-async def send_push_to_project_owner(
-    session: AsyncSession, project_id: str, title: str, body: str, url: str = "/"
-) -> None:
+async def send_push_to_user(session: AsyncSession, user_id: str, title: str, body: str, url: str = "/") -> None:
+    """
+    The general-purpose sender — anything that needs to notify a
+    specific user, regardless of whether a project is involved at all
+    (e.g. a security alert like account lockout has no project
+    context). send_push_to_project_owner (below) is now a thin wrapper
+    around this, so there's one actual sending implementation instead
+    of two that could quietly drift apart.
+    """
     if not settings.vapid_private_key or not settings.vapid_public_key:
         return
 
-    project = await session.get(Project, project_id)
-    if not project:
-        return
-
-    result = await session.exec(
-        select(PushSubscription).where(PushSubscription.user_id == project.owner_id)
-    )
+    result = await session.exec(select(PushSubscription).where(PushSubscription.user_id == user_id))
     subscriptions = result.all()
     if not subscriptions:
         return
 
     payload = json.dumps({"title": title, "body": body, "url": url})
 
-    # Bug fix: `webpush()` makes a real synchronous HTTP request to the
-    # push service (FCM/Mozilla/etc.) and blocks until it responds.
-    # Calling it directly inside this `async def` blocked the entire
-    # FastAPI event loop for that round-trip — and this function runs
-    # at the end of *every* orchestration run and *every* deployment,
-    # so every build notification was stalling the whole server for
-    # every other user, not just this one. asyncio.to_thread() moves
-    # each send onto a worker thread so the event loop stays responsive.
+    # Bug fix (kept from the original version): `webpush()` makes a real
+    # synchronous HTTP request to the push service (FCM/Mozilla/etc.)
+    # and blocks until it responds. Calling it directly inside this
+    # `async def` would block the entire FastAPI event loop for that
+    # round-trip for every other request being served at the same
+    # time — asyncio.to_thread() moves each send onto a worker thread
+    # so the event loop stays responsive.
     for sub in subscriptions:
         try:
             await asyncio.to_thread(_send_one, payload, sub)
@@ -68,3 +67,12 @@ async def send_push_to_project_owner(
                 await session.commit()
             else:
                 logger.warning("Push failed for subscription %s: %s", sub.id, exc)
+
+
+async def send_push_to_project_owner(
+    session: AsyncSession, project_id: str, title: str, body: str, url: str = "/"
+) -> None:
+    project = await session.get(Project, project_id)
+    if not project:
+        return
+    await send_push_to_user(session, project.owner_id, title, body, url)
