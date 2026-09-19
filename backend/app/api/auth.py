@@ -25,13 +25,16 @@ from app.core.rate_limit import enforce, login_limiter, security_answer_limiter,
 from app.core.token_revocation import revoke_token, is_token_revoked
 from app.api.projects import _validate_session_payload, get_current_user_id
 from app.core.security import (
+    api_key_lookup_prefix,
     create_access_token,
     create_2fa_pending_token,
     decode_2fa_pending_token,
     decode_access_token,
+    generate_api_key,
     generate_backup_codes,
     generate_csrf_token,
     generate_totp_secret,
+    hash_api_key,
     hash_backup_code,
     hash_password,
     hash_security_answer,
@@ -41,7 +44,7 @@ from app.core.security import (
     verify_security_answer,
     verify_totp_code,
 )
-from app.db.models import AuthProvider, User
+from app.db.models import ApiKey, AuthProvider, User
 from app.db.session import get_session
 from app.services.push_notifications import send_push_to_user
 
@@ -432,6 +435,65 @@ async def verify_2fa(
             return result
 
     raise HTTPException(401, "Incorrect code.")
+
+
+# ---------------------------------------------------------------------
+# API keys — programmatic access (curl/scripts/CI), no browser session
+# ---------------------------------------------------------------------
+
+class CreateApiKeyRequest(BaseModel):
+    name: str = "API Key"
+
+
+@router.post("/api-keys")
+async def create_api_key(
+    body: CreateApiKeyRequest,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """The raw key is returned ONCE, here, and never again — only its
+    hash is stored (see ApiKey.key_hash), the same principle as a
+    password. If it's lost, the only recovery is revoking it and
+    creating a new one."""
+    raw_key = generate_api_key()
+    key = ApiKey(
+        owner_id=user_id, name=body.name,
+        key_hash=hash_api_key(raw_key), key_prefix=api_key_lookup_prefix(raw_key),
+    )
+    session.add(key)
+    await session.commit()
+    await session.refresh(key)
+    return {"id": key.id, "name": key.name, "key": raw_key, "key_prefix": key.key_prefix, "created_at": key.created_at}
+
+
+@router.get("/api-keys")
+async def list_api_keys(user_id: str = Depends(get_current_user_id), session: AsyncSession = Depends(get_session)):
+    result = await session.exec(
+        select(ApiKey).where(ApiKey.owner_id == user_id).order_by(ApiKey.created_at.desc())
+    )
+    return [
+        {
+            "id": k.id, "name": k.name, "key_prefix": k.key_prefix,
+            "created_at": k.created_at, "last_used_at": k.last_used_at, "revoked": k.revoked,
+        }
+        for k in result.all()
+    ]
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key(
+    key_id: str, user_id: str = Depends(get_current_user_id), session: AsyncSession = Depends(get_session)
+):
+    key = await session.get(ApiKey, key_id)
+    # Same pattern as elsewhere in this file: "doesn't exist" and
+    # "exists but isn't yours" get the identical 404, so a request
+    # can't be used to probe which key IDs are real.
+    if not key or key.owner_id != user_id:
+        raise HTTPException(404, "API key not found.")
+    key.revoked = True
+    session.add(key)
+    await session.commit()
+    return {"status": "revoked"}
 
 
 @router.get("/security-question")
