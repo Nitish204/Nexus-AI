@@ -153,3 +153,37 @@ def decode_2fa_pending_token(token: str) -> str | None:
     if payload.get("purpose") != "2fa_pending":
         return None
     return payload.get("sub")
+
+
+# ---------------------------------------------------------------------
+# API keys — programmatic access (curl/scripts/CI), no browser session
+# ---------------------------------------------------------------------
+
+API_KEY_PREFIX = "nxs_"
+# How much of the raw key is stored in plaintext (ApiKey.key_prefix)
+# purely as a fast lookup index — a request's X-API-Key header can't be
+# turned into a database query by hashing it first, the way password
+# verification checks one already-known row (bcrypt is intentionally
+# non-deterministic/salted, so the same input hashes differently every
+# time — there's no "hash the input and SELECT WHERE key_hash = that"
+# shortcut). The prefix narrows the search to the (in practice, exactly
+# one) matching row; the FULL key is still what actually gets verified
+# against that row's bcrypt hash, so a leaked prefix alone reveals
+# nothing usable.
+API_KEY_PREFIX_LENGTH = 12
+
+
+def generate_api_key() -> str:
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
+def api_key_lookup_prefix(raw_key: str) -> str:
+    return raw_key[:API_KEY_PREFIX_LENGTH]
+
+
+def hash_api_key(raw_key: str) -> str:
+    return pwd_context.hash(raw_key)
+
+
+def verify_api_key(raw_key: str, key_hash: str) -> bool:
+    return pwd_context.verify(raw_key, key_hash)
