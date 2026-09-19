@@ -1,11 +1,12 @@
 import asyncio
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import select, desc
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, api_key_lookup_prefix, verify_api_key
 from app.core.token_revocation import is_token_revoked
-from app.db.models import AgentMessage, AnalysisResult, GeneratedFile, GraphEdge, Project, Task, Deployment
+from app.db.models import AgentMessage, AnalysisResult, ApiKey, GeneratedFile, GraphEdge, Project, Task, Deployment
 from app.db.session import get_session, get_session_context
 from app.services.orchestrator import Orchestrator
 from sqlalchemy.exc import IntegrityError
@@ -50,9 +51,41 @@ async def _validate_session_payload(payload: dict) -> str:
     return payload["sub"]
 
 
-async def get_current_user_id(request: Request, authorization: str | None = Header(default=None)) -> str:
+async def _resolve_api_key(raw_key: str, session: AsyncSession) -> str:
     """
-    Two auth paths, both landing here:
+    Can't hash the incoming key and look up a row by that hash directly
+    — bcrypt is deliberately non-deterministic (salted), so the same
+    input produces a different hash every time, which rules out a
+    simple "WHERE key_hash = hash(presented_key)" query. Instead: use
+    the plaintext key_prefix (stored specifically for this) to narrow
+    to the — in practice, exactly one, given negligible collision odds
+    — candidate row(s), then verify the FULL presented key against
+    that candidate's real bcrypt hash.
+    """
+    prefix = api_key_lookup_prefix(raw_key)
+    result = await session.exec(select(ApiKey).where(ApiKey.key_prefix == prefix, ApiKey.revoked == False))
+    for candidate in result.all():
+        if verify_api_key(raw_key, candidate.key_hash):
+            candidate.last_used_at = datetime.now(timezone.utc)
+            session.add(candidate)
+            await session.commit()
+            return candidate.owner_id
+    raise HTTPException(401, "Invalid API key.")
+
+
+async def get_current_user_id(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    session: AsyncSession = Depends(get_session),
+) -> str:
+    """
+    Three auth paths, all landing here:
+      - Programmatic access: `X-API-Key: nxs_...`. Same reasoning as
+        the Bearer path below re: CSRF — a custom header is never
+        attached automatically by a browser to a request the user
+        didn't initiate, so this needs no CSRF check either. Checked
+        first since its format (the "nxs_" prefix) is unambiguous.
       - Mobile app: sends `Authorization: Bearer <token>`. A bearer
         header is never attached automatically by anything other than
         code that explicitly chose to — a malicious page can't force a
@@ -68,6 +101,9 @@ async def get_current_user_id(request: Request, authorization: str | None = Head
         back in a header. This is the standard "double-submit cookie"
         CSRF defense.
     """
+    if x_api_key and x_api_key.startswith("nxs_"):
+        return await _resolve_api_key(x_api_key, session)
+
     if authorization and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ").strip()
         payload = decode_access_token(token)
