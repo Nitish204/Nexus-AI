@@ -24,8 +24,9 @@ from sqlmodel import select
 
 from app.core.config import get_settings
 from app.core.events import event_bus
+from app.core.llm_pricing import calculate_cost_usd
 from app.core.safe_path import UnsafeGeneratedPath, safe_relative_path
-from app.db.models import AgentMessage, AgentRole, GeneratedFile, Task, TaskStatus
+from app.db.models import AgentMessage, AgentRole, GeneratedFile, Task, TaskStatus, TokenUsage
 from datetime import datetime, timezone
 
 settings = get_settings()
@@ -168,6 +169,61 @@ class AgentBase(abc.ABC):
         self.session.add(new_file)
         return new_file
 
+    async def _record_token_usage(self, task: Task, usage) -> None:
+        """
+        Persist one TokenUsage row for a completed LLM call and publish
+        it over the event bus so the frontend cost widget can update
+        live instead of only on page reload.
+
+        `usage` is the OpenAI-SDK `CompletionUsage` object returned in
+        the final streamed chunk when the request was made with
+        `stream_options={"include_usage": True}` (see run() below). It
+        can legitimately be None — some OpenAI-compatible local servers
+        (Ollama, LM Studio) don't emit a usage block at all — in which
+        case this is a no-op rather than recording a fabricated zero
+        row that would silently understate real cloud spend if a
+        future config change swapped providers.
+        """
+        if usage is None:
+            logger.warning(
+                "[%s] task=%s LLM response had no usage data — provider '%s' may not "
+                "support stream_options.include_usage; cost tracking skipped for this call.",
+                self.role.value, task.id, settings.llm_provider,
+            )
+            return
+
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", prompt_tokens + completion_tokens) or (prompt_tokens + completion_tokens)
+        cost_usd, is_estimated = calculate_cost_usd(self.model_name, prompt_tokens, completion_tokens)
+
+        record = TokenUsage(
+            project_id=task.project_id,
+            task_id=task.id,
+            role=self.role,
+            model_name=self.model_name,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost_usd,
+            is_estimated=is_estimated,
+        )
+        self.session.add(record)
+        await self.session.commit()
+        await event_bus.publish(
+            task.project_id,
+            "token_usage",
+            {
+                "task_id": task.id,
+                "role": self.role.value,
+                "model": self.model_name,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "cost_usd": cost_usd,
+                "is_estimated": is_estimated,
+            },
+        )
+
     async def run(self, task: Task) -> Task:
         logger.info("[%s] task=%s starting: %s", self.role.value, task.id, task.title)
 
@@ -188,6 +244,7 @@ class AgentBase(abc.ABC):
             try:
                 logger.info("[%s] task=%s calling model=%s (attempt %d)", self.role.value, task.id, self.model_name, attempt + 1)
                 full_text = ""
+                usage = None
                 stream = await self.client.chat.completions.create(
                     model=self.model_name,
                     max_tokens=settings.max_tokens_per_agent_call,
@@ -196,8 +253,22 @@ class AgentBase(abc.ABC):
                         {"role": "user", "content": prompt},
                     ],
                     stream=True,
+                    # Asks the provider to emit a final chunk carrying
+                    # token counts (chunk.usage), which is what makes
+                    # LLM cost tracking possible at all on a streamed
+                    # response — without this the SDK's usage field is
+                    # always None. Groq and OpenAI both honor it; a
+                    # local server that doesn't understand the option
+                    # just ignores it, and _record_token_usage() below
+                    # already treats usage=None as "skip, don't fabricate
+                    # a cost".
+                    stream_options={"include_usage": True},
                 )
                 async for chunk in stream:
+                    if getattr(chunk, "usage", None) is not None:
+                        usage = chunk.usage
+                    if not chunk.choices:
+                        continue  # the final usage-only chunk has an empty choices list
                     delta = chunk.choices[0].delta.content or ""
                     if not delta:
                         continue
@@ -209,6 +280,8 @@ class AgentBase(abc.ABC):
                     )
 
                 logger.info("[%s] task=%s LLM call complete, %d chars received", self.role.value, task.id, len(full_text))
+
+                await self._record_token_usage(task, usage)
 
                 if not full_text.strip():
                     raise ValueError(
