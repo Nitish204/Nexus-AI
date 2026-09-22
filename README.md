@@ -10,7 +10,7 @@ A single prompt in. A production-ready application out — planned, built, teste
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-Frontend-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![React Native](https://img.shields.io/badge/React_Native-Mobile-61DAFB?logo=react&logoColor=black)](https://reactnative.dev/)
+[![React Native](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)](docs/adr/0001-pwa-not-native-mobile.md)
 [![Docker](https://img.shields.io/badge/Docker-Sandboxed-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -49,7 +49,7 @@ That's the input. NEXUS handles decomposition, implementation, static analysis, 
 | 👁️ **Full transparency** | Live WebSocket streaming into a 3D visualization — nothing happens in a black box |
 | 🔒 **Cookie-based sessions, not tokens in local storage** | Session auth never touches JS-reachable storage on the web app, closing the most common XSS-to-account-takeover path |
 | 🖥️ **Bring your own LLM** | Point every agent at a local OpenAI-compatible server (Ollama, LM Studio, vLLM) instead of the cloud — no API key, nothing leaves the machine |
-| 📱 **On the go** | A companion mobile app for checking build status and triggering deploys from your phone |
+| 📱 **On the go** | Installable as a PWA (Add to Home Screen) with Web Push, so you can get notified when a build finishes or fails without a native app — see [ADR 0001](docs/adr/0001-pwa-not-native-mobile.md) for why |
 
 ---
 
@@ -120,9 +120,31 @@ Session and platform security got a full pass, not just individual bug fixes —
 - **Rate limiting** on login, signup, and the security-question/password-reset flow — the last of these is the highest-value brute-force target in the system (a correct guess there is a full account takeover) and is limited accordingly.
 - **The sandbox container runs hardened**: no network access, a memory ceiling, a `pids_limit` (fork-bomb protection), all Linux capabilities dropped, and `no-new-privileges` set.
 - **The app refuses to boot in production** if `SECRET_KEY` or `JWT_SECRET` are still at their insecure default values — a misconfiguration that would otherwise let anyone forge a valid session token for any user.
-- **Mobile auth is intentionally separate**: the React Native app has no shared cookie jar with a browser, so it authenticates via a Bearer token in its own platform storage instead — the same `get_current_user_id` dependency accepts both paths cleanly.
+- **Non-browser API clients use a Bearer token, not the session cookie**: any client without a shared cookie jar with a browser (a future native wrapper, a CLI, a script) authenticates via a Bearer token in the `Authorization` header instead — the same `get_current_user_id` dependency accepts both paths cleanly. See [ADR 0001](docs/adr/0001-pwa-not-native-mobile.md) for why NEXUS ships as an installable PWA rather than a separate native mobile app today.
 
 Known, accepted limitation: `GET /api/auth/security-question` confirms whether an email is registered (necessary since there's no email-verification step in the reset flow) — rate-limited to blunt enumeration, not eliminated by design.
+
+---
+
+## Observability & Cost Tracking
+
+- **Error tracking**: both the backend (`app/core/observability.py`) and frontend (`frontend/src/lib/sentry.js`) report unhandled exceptions to Sentry when `SENTRY_DSN` / `VITE_SENTRY_DSN` are set. Unset (the default) is a silent no-op — no code changes needed to run without it locally or in CI.
+- **Uptime monitoring**: point an external monitor (UptimeRobot, Better Stack, Render/Kubernetes health checks) at `GET /health` for liveness ("is the process up") and `GET /health/ready` for readiness ("can it actually serve a request" — checks Postgres and Redis independently and reports which one is down).
+- **LLM cost tracking**: every agent LLM call records its token usage and an estimated USD cost (`app/db/models.TokenUsage`, priced in `app/core/llm_pricing.py`). `GET /api/projects/{id}/analytics/cost` returns the running total and a per-agent-role breakdown; local-provider calls are always $0 (nothing metered leaves the machine), and a model missing from the pricing table is priced with a conservative fallback and flagged `is_estimated: true` rather than silently reported as free.
+
+---
+
+## Testing
+
+```bash
+# Backend — pytest against an in-memory SQLite DB, no external services needed
+cd backend && python -m pytest
+
+# Frontend — Vitest + React Testing Library
+cd frontend && npm test
+```
+
+Backend coverage includes every agent's response-parsing (`tests/test_agents*.py`), the shared retry/streaming/cost-tracking machinery in `AgentBase.run()` (`tests/test_agent_run_lifecycle.py`, `tests/test_token_usage.py`), and the orchestrator's dependency resolution and sandbox fix-and-retry loop. Frontend coverage includes the CSRF/credentials logic in `utils/api.js`, push-notification state handling, and component rendering (`Sidebar`).
 
 ---
 
@@ -198,9 +220,9 @@ Known, accepted limitation: `GET /api/auth/security-question` confirms whether a
 <td valign="top" width="20%">
 
 **Mobile**
-- Expo / React Native
-- React Navigation
-- AsyncStorage
+- Installable PWA (`manifest.json` + service worker)
+- Web Push (VAPID)
+- Offline app-shell cache
 
 </td>
 <td valign="top" width="20%">
@@ -255,15 +277,23 @@ npm run dev
 
 If frontend and backend are on different domains in production, add a same-origin rewrite (e.g. `vercel.json`) proxying `/api/*` to the backend — this keeps the session cookie first-party and avoids third-party cookie blocking in Safari/Chrome. See `frontend/vercel.json` for the Vercel example.
 
-### 4 · Mobile (optional)
+### 4 · Mobile / PWA (optional)
+
+There's no separate mobile app or `mobile/` directory — NEXUS ships as
+an installable Progressive Web App instead (see
+[ADR 0001](docs/adr/0001-pwa-not-native-mobile.md)). Nothing extra to
+build: open the deployed frontend on a phone and use the browser's
+"Add to Home Screen" / install prompt. To receive push notifications
+when a build finishes, generate VAPID keys and set them in the
+backend's `.env`:
 
 ```bash
-cd mobile
-npm install
-npx expo start
+cd backend
+python3 scripts/generate_vapid_keys.py
+# copy the printed VAPID_PRIVATE_KEY / VAPID_PUBLIC_KEY into .env
 ```
 
-Scan the QR code with Expo Go. Update `API_BASE` in `mobile/api.js` to point at your deployed backend.
+Then tap "Enable notifications" in the app's sidebar once installed.
 
 ### 5 · Database
 
@@ -303,10 +333,16 @@ NEXUS
 │   │   ├── pages/            # AuthPage, etc.
 │   │   ├── hooks/             # useNexusProject (WebSocket + API), useVoiceCommand
 │   │   ├── components/        # Sidebar, AnalyticsPanel
-│   │   └── utils/              # Shared cookie-aware API client
+│   │   ├── lib/                 # Sentry init
+│   │   ├── test/                 # Vitest setup
+│   │   └── utils/              # Shared cookie-aware API client, push notifications
+│   ├── public/
+│   │   ├── manifest.json         # PWA manifest
+│   │   └── sw.js                  # Service worker: offline app-shell cache + Web Push
 │   └── vercel.json              # Same-origin proxy config (production)
 │
-├── mobile/                # Expo / React Native companion app
+├── docs/
+│   └── adr/                # Architecture decision records (e.g. PWA vs. native mobile)
 │
 ├── infra/
 │   ├── docker-compose.yml
@@ -336,15 +372,18 @@ NEXUS
 | AI-assisted code review (on-demand, per-file) | ✅ |
 | Plugin marketplace (integrations, agents, themes, templates) | ✅ |
 | Kubernetes deployment | ✅ |
-| Mobile companion app (Expo / React Native) | ✅ |
+| Installable PWA with offline app-shell + Web Push ([ADR 0001](docs/adr/0001-pwa-not-native-mobile.md)) | ✅ |
 | GitHub OAuth `state` (CSRF) protection | ✅ |
 | Same-origin proxying for cross-domain cookie reliability | ✅ |
-| Set-a-password flow for OAuth-only accounts (so mobile login works without re-registering) | ⬜ |
+| Error tracking (Sentry) on backend + frontend, `/health` + `/health/ready` for uptime monitoring | ✅ |
+| Per-project LLM cost tracking (token usage + USD estimate, by agent role) | ✅ |
+| Automated test coverage for every agent's response-parsing + retry logic, and the frontend's API/utility layer | ✅ |
+| Set-a-password flow for OAuth-only accounts (so a non-browser client can log in without re-registering) | ⬜ |
 | Redis-backed rate limiting (for multi-replica deployments) | ⬜ |
 | Public, API-key-authenticated read endpoints (separate from the cookie-based web session) | ⬜ |
 | Code-split the frontend bundle (currently a single >1MB chunk) | ⬜ |
 | Plugin marketplace: real third-party plugin submission/review flow | ⬜ |
-| Native Google/GitHub sign-in inside the mobile app (currently email/password only) | ⬜ |
+| Native mobile app (Capacitor wrapping the existing frontend) — only if the PWA's limits in ADR 0001 become a real constraint | ⬜ |
 
 ---
 
