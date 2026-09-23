@@ -79,6 +79,15 @@ class User(SQLModel, table=True):
     totp_enabled: bool = False
     totp_backup_codes: Optional[str] = None  # JSON list of hashes
 
+    # Account lockout (see app/api/auth.py's /login handler). Missing
+    # from this model despite the login route depending on both fields
+    # unconditionally was a real bug — every login attempt crashed with
+    # AttributeError before a migration/model fix ever shipped this.
+    # failed_login_count resets to 0 on any successful login or once a
+    # lockout expires; locked_until is None until the threshold is hit.
+    failed_login_count: int = 0
+    locked_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
 
 class Project(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
@@ -194,6 +203,39 @@ class PushSubscription(SQLModel, table=True):
     endpoint: str = Field(unique=True)
     p256dh: str
     auth: str
+    created_at: datetime = utc_datetime_field()
+
+
+class TokenUsage(SQLModel, table=True):
+    """
+    One row per completed (or failed-after-streaming) LLM call made by
+    an agent. This is the raw ledger the cost dashboard
+    (GET /api/projects/{id}/analytics/cost) aggregates — kept at this
+    granularity, rather than a running counter on Project, so spend can
+    be broken down by role/model/task after the fact and so a bug in
+    the aggregation query never has to be "fixed" by re-deriving lost
+    data.
+    """
+    # protected_namespaces=() silences pydantic's warning that
+    # "model_name" collides with its reserved "model_" prefix (used for
+    # pydantic's own model_ methods) — it's a real field, not a
+    # BaseModel method, so the collision is harmless here.
+    model_config = {"protected_namespaces": ()}
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    project_id: str = Field(foreign_key="project.id", index=True)
+    task_id: str = Field(foreign_key="task.id", index=True)
+    role: AgentRole
+    model_name: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    # True when cost_usd was computed against the fallback pricing rate
+    # because `model_name` wasn't in the configured pricing table (see
+    # app/core/llm_pricing.py) — surfaced so the UI can show "~$x.xx"
+    # instead of implying penny-accurate billing data.
+    is_estimated: bool = False
     created_at: datetime = utc_datetime_field()
 
 
