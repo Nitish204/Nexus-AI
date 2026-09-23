@@ -4,6 +4,7 @@ NEXUS — Central configuration.
 from __future__ import annotations  # lets `list[str]` type hints work on Python 3.8 too — see allowed_origins_list below
 
 from functools import lru_cache
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,48 @@ class Settings(BaseSettings):
     vapid_subject: str = "mailto:admin@example.com"
 
     allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+
+    # --- Observability -----------------------------------------------
+    # Empty string = disabled. Sentry's own SDK treats dsn=None/"" as a
+    # no-op client (every call becomes a cheap in-process discard), so
+    # leaving this unset in dev/test never requires special-casing
+    # elsewhere — see app/core/observability.py.
+    sentry_dsn: str = ""
+    # Fraction of requests to capture full performance traces for (0-1).
+    # Kept low by default: tracing has real overhead and this is a
+    # per-request cost multiplier, not a one-time toggle.
+    sentry_traces_sample_rate: float = 0.1
+    # Fraction of *profiled* traces (CPU profiling within a trace).
+    sentry_profiles_sample_rate: float = 0.0
+    # Surfaced to Sentry as the "release" so errors can be bisected to a
+    # deploy. Set this from CI to a commit SHA/tag; falls back to
+    # "unknown" locally, which is intentionally obvious in the Sentry UI
+    # rather than silently blank.
+    release_version: str = "unknown"
+
+    # --- LLM cost tracking ---------------------------------------------
+    # USD per 1,000,000 tokens, keyed by the exact model string used in
+    # AgentBase (settings.agent_model / settings.local_llm_model).
+    # These are looked up by app.core.llm_pricing — see that module for
+    # the fallback behavior when a model isn't in this table (e.g. a
+    # newly released Groq model, or a locally-hosted one, which is
+    # always treated as free since nothing leaves the machine).
+    llm_pricing_input_per_million: dict[str, float] = Field(
+        default_factory=lambda: {
+            "openai/gpt-oss-120b": 0.15,
+            "openai/gpt-oss-20b": 0.05,
+            "llama-3.3-70b-versatile": 0.59,
+            "llama-3.1-8b-instant": 0.05,
+        }
+    )
+    llm_pricing_output_per_million: dict[str, float] = Field(
+        default_factory=lambda: {
+            "openai/gpt-oss-120b": 0.60,
+            "openai/gpt-oss-20b": 0.20,
+            "llama-3.3-70b-versatile": 0.79,
+            "llama-3.1-8b-instant": 0.08,
+        }
+    )
 
     # Only set this to True if NEXUS sits behind a proxy/load balancer
     # (nginx, Render, an ALB, etc.) that you control and that overwrites
