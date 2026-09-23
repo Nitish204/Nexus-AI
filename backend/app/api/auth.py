@@ -4,11 +4,11 @@ Sign-In (ID token verification), and GitHub OAuth (code exchange).
 
 Session model: the web app authenticates via an httpOnly cookie set by
 this file (JS on the page can never read it, closing off token theft
-via any future XSS bug elsewhere in the app). The mobile app — which
-has no cookie jar shared with a browser and a different threat model —
-continues to receive the token in the response body and send it back
-as a Bearer header, exactly as before. Both paths are accepted by
-`get_current_user_id` in api/projects.py.
+via any future XSS bug elsewhere in the app). Any non-browser API
+client — one with no cookie jar shared with a browser, e.g. a future
+native wrapper, CLI, or script (see ADR 0001) — instead receives the
+token in the response body and sends it back as a Bearer header. Both
+paths are accepted by `get_current_user_id` in api/projects.py.
 """
 import httpx
 import json
