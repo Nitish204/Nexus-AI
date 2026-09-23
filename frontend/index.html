@@ -3,10 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <title>NEXUS — Autonomous AI Developer Workspace</title>
+    <meta name="description" content="Autonomous multi-agent software engineering, orchestrated." />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Browser tab icon. SVG first (crisp at any zoom in browsers that
+         support it — Chrome, Firefox, Edge), .ico as the universal
+         fallback (Safari and anything else). Without an explicit
+         rel="icon" here the browser falls back to guessing GET /favicon.ico,
+         which didn't exist in this project before — hence the previously
+         blank/broken tab icon. -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+
+    <!-- iOS home-screen icon when installed as a PWA (Add to Home
+         Screen) — apple-touch-icon.png must be exactly this file, iOS
+         doesn't read the web manifest's icons array at all. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#7c3aed" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+
+    <!-- Link/social-preview cards (search results, Slack/Discord/iMessage
+         unfurls, etc.) read these, not the favicon — without them a
+         shared NEXUS link previews with no image at all. -->
+    <meta property="og:title" content="NEXUS — Autonomous AI Developer Workspace" />
+    <meta property="og:description" content="Autonomous multi-agent software engineering, orchestrated." />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content="/icon-512.png" />
   </head>
   <body style="margin:0;">
     <div id="root"></div>
