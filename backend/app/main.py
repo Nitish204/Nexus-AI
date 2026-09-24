@@ -83,6 +83,7 @@ app.include_router(push.router)
 
 
 @app.get("/health")
+@app.head("/health")
 async def health():
     """
     Liveness only: "is the process up and able to answer HTTP at all".
@@ -91,11 +92,23 @@ async def health():
     whole process needs restarting when the process itself is fine.
     Point an uptime monitor (UptimeRobot/Better Stack/etc.) here for
     "is NEXUS reachable" alerting.
+
+    Both GET and HEAD are registered explicitly: FastAPI does NOT
+    implicitly add HEAD support to a route only decorated with
+    @app.get (confirmed — a bare @app.get gives a real 405 on HEAD,
+    it doesn't silently fall back to the GET handler). Render's own
+    port/health scanner sends HEAD requests here, so without this a
+    perfectly healthy process gets a 405 on every single health check,
+    which reads to Render as "no open ports detected" / unhealthy and
+    drives exactly the repeated-restart behavior visible in past
+    deploy logs — a real, observed production bug, not a
+    theoretical one.
     """
     return {"status": "ok", "app": settings.app_name}
 
 
 @app.get("/health/ready")
+@app.head("/health/ready")
 async def health_ready():
     """
     Readiness: "can this process actually serve a real request right
