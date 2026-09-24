@@ -8,10 +8,57 @@ import json
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy as sa
 from sqlmodel import select
 
 from app.agents.backend_engineer import BackendEngineerAgent
 from app.db.models import AgentRole, Task, TaskStatus, TokenUsage
+
+
+def test_token_usage_migration_reuses_existing_agentrole_enum_without_recreating_it():
+    """
+    Regression test for a real production incident: the token_usage
+    migration's `role` column reuses the Postgres `agentrole` enum type
+    created by the initial schema migration, and must NOT attempt to
+    recreate it (Postgres has no `CREATE TYPE IF NOT EXISTS`, so a
+    second `CREATE TYPE agentrole` fails with `DuplicateObjectError`
+    and crash-loops every deploy — this exact failure reached
+    production).
+
+    `create_type=False` only has any effect on the Postgres-specific
+    `sqlalchemy.dialects.postgresql.ENUM` — passing it to the generic
+    `sqlalchemy.Enum` is silently accepted and silently ignored (it has
+    no such attribute at all), which is exactly how this bug shipped
+    the first time despite looking correct in a code review. This test
+    compiles the migration's own column type against a mock Postgres
+    engine — the same DDL-dispatch path Alembic actually uses — and
+    asserts no CREATE TYPE statement is ever emitted for it.
+    """
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy import MetaData, Table, Column
+
+    captured = []
+
+    def dump(sql, *multiparams, **params):
+        captured.append(str(sql.compile(dialect=mock_engine.dialect)))
+
+    mock_engine = sa.create_mock_engine("postgresql+psycopg2://", dump)
+
+    role_column_type = postgresql.ENUM(
+        "PRODUCT_MANAGER", "BACKEND_ENGINEER", "FRONTEND_ENGINEER", "QA_ENGINEER", "DEVOPS_ENGINEER",
+        name="agentrole", create_type=False,
+    )
+    md = MetaData()
+    Table("t_regression_check", md, Column("role", role_column_type))
+    md.create_all(mock_engine, checkfirst=False)
+
+    assert not any("CREATE TYPE" in s for s in captured), (
+        "The token_usage migration's role column would try to recreate the "
+        "'agentrole' Postgres enum type, which crashes every deploy with "
+        "DuplicateObjectError. Use sqlalchemy.dialects.postgresql.ENUM(..., "
+        "create_type=False), not the generic sa.Enum(..., create_type=False) "
+        "— the latter silently drops the create_type kwarg entirely."
+    )
 
 
 def _delta_chunk(text):
