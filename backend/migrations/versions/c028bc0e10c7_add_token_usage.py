@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 import sqlmodel  # noqa: F401 — see 3f086b6e3c11 for why this import is required
 
 
@@ -27,9 +28,17 @@ def upgrade() -> None:
         sa.Column('task_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         # create_type=False: the Postgres ENUM type "agentrole" already
         # exists (created by eb174659ba7f for task.assigned_role) — letting
-        # SQLAlchemy auto-create it again here would fail with
-        # "type agentrole already exists".
-        sa.Column('role', sa.Enum('PRODUCT_MANAGER', 'BACKEND_ENGINEER', 'FRONTEND_ENGINEER', 'QA_ENGINEER', 'DEVOPS_ENGINEER', name='agentrole', create_type=False), nullable=False),
+        # it auto-create again fails with "type agentrole already exists".
+        #
+        # IMPORTANT: create_type is a postgresql-dialect-specific kwarg.
+        # It only has any effect on sqlalchemy.dialects.postgresql.ENUM.
+        # Passing it to the generic sa.Enum(...) (as an earlier version of
+        # this migration did) is silently accepted and silently ignored —
+        # sa.Enum has no create_type attribute at all, so Alembic still
+        # emitted CREATE TYPE and broke every deploy with
+        # "DuplicateObjectError: type agentrole already exists". This is
+        # the actual fix, not a cosmetic one.
+        sa.Column('role', postgresql.ENUM('PRODUCT_MANAGER', 'BACKEND_ENGINEER', 'FRONTEND_ENGINEER', 'QA_ENGINEER', 'DEVOPS_ENGINEER', name='agentrole', create_type=False), nullable=False),
         sa.Column('model_name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('prompt_tokens', sa.Integer(), nullable=False, server_default=sa.text('0')),
         sa.Column('completion_tokens', sa.Integer(), nullable=False, server_default=sa.text('0')),
