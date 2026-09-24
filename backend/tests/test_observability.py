@@ -48,3 +48,25 @@ def test_health_ready_endpoint_reports_database_status():
     # health_ready() returns a JSONResponse; inspect its body directly
     # rather than requiring a running server/test client for this unit test.
     assert result.status_code in (200, 503)
+
+
+def test_health_endpoints_accept_head_requests():
+    """
+    Regression test for a real production incident: Render's own
+    port/health scanner sends HEAD requests, and a route registered
+    only via @app.get does NOT implicitly answer HEAD in this FastAPI
+    version — it 405s. That 405 read to Render as "no open ports
+    detected" and drove a repeated restart/crash-loop cycle that
+    presented to users as intermittent login failures. Both /health
+    and /health/ready must explicitly support HEAD (see main.py) or
+    this incident repeats itself.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+
+    assert client.head("/health").status_code != 405
+    assert client.head("/health/ready").status_code != 405
+    # HEAD and GET must agree on outcome for the same endpoint.
+    assert client.head("/health").status_code == client.get("/health").status_code
